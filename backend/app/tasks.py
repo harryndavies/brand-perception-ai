@@ -4,7 +4,6 @@ These run in the Celery worker process, separate from the FastAPI server.
 Progress is tracked via Redis so the API can stream updates to clients.
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -17,10 +16,12 @@ import anthropic
 from sqlmodel import Session
 
 from app.core.database import engine
+from app.core.logging import setup_logging, correlation_id
 from app.core import progress
 from app.models.report import Report
 from app.worker import celery_app
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -176,6 +177,7 @@ def _call_gemini(brand: str, competitors: list[str]) -> dict:
 def _run_job(report_id: str, job_id: str, call_fn, brand: str, competitors: list[str]) -> dict:
     """Run a single AI call with progress updates via Redis."""
     progress.emit(report_id, job_id, "running", 0)
+    start = time.perf_counter()
 
     # Simulate incremental progress while the API call runs
     import concurrent.futures
@@ -188,7 +190,15 @@ def _run_job(report_id: str, job_id: str, call_fn, brand: str, competitors: list
             time.sleep(0.5)
 
     result = future.result()
+    duration_ms = round((time.perf_counter() - start) * 1000, 1)
     progress.emit(report_id, job_id, "complete", 100, result)
+
+    logger.info(
+        "Job %s completed in %.0fms",
+        job_id,
+        duration_ms,
+        extra={"report_id": report_id, "job_id": job_id, "duration_ms": duration_ms, "model": result.get("model")},
+    )
     return result
 
 
@@ -201,6 +211,16 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str]):
     Runs as a Celery task in a worker process. Progress is published to
     Redis so the API server can stream SSE updates to the client.
     """
+    # Set correlation ID for this task so all logs are traceable
+    cid = report_id[:8]
+    correlation_id.set(cid)
+
+    task_start = time.perf_counter()
+    logger.info(
+        "Starting analysis for %s",
+        brand,
+        extra={"report_id": report_id, "brand": brand, "task_name": "run_analysis"},
+    )
     progress.set_status(report_id, "processing")
 
     try:
@@ -247,6 +267,20 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str]):
                 session.commit()
 
         progress.set_status(report_id, "complete")
+
+        task_duration = round((time.perf_counter() - task_start) * 1000, 1)
+        logger.info(
+            "Analysis complete for %s (%.0fms, sentiment=%.2f)",
+            brand,
+            task_duration,
+            avg_sentiment,
+            extra={
+                "report_id": report_id,
+                "brand": brand,
+                "task_name": "run_analysis",
+                "duration_ms": task_duration,
+            },
+        )
 
         # Publish completion event for downstream consumers
         progress.publish_event(report_id, "analysis.complete", {

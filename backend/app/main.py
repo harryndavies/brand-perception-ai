@@ -7,7 +7,11 @@ load_dotenv()
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import init_db
+from app.core.logging import setup_logging
+from app.middleware import CorrelationMiddleware
 from app.routes import auth, reports, usage
+
+setup_logging()
 
 
 @asynccontextmanager
@@ -17,6 +21,9 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Brand Intelligence", lifespan=lifespan)
+
+# Correlation ID middleware (outermost so it wraps everything)
+app.add_middleware(CorrelationMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

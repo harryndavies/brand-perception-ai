@@ -1,4 +1,6 @@
-from app.services.analysis import _parse_json, _generate_trend, _emit, get_job_state, _jobs
+from unittest.mock import patch, MagicMock
+
+from app.tasks import _parse_json, _generate_trend
 
 
 def test_parse_json_plain():
@@ -36,33 +38,50 @@ def test_generate_trend_bounds():
             assert -1 <= point["sentiment"] <= 1
 
 
-def test_emit_and_get_job_state():
-    report_id = "test-report-emit"
-    _emit(report_id, "job1", "running", 50)
+@patch("app.core.progress._get_redis")
+def test_emit_and_get_state(mock_redis):
+    """Test Redis-backed progress tracking."""
+    store = {}
+    mock_r = MagicMock()
+    mock_r.get.side_effect = lambda k: store.get(k)
+    mock_r.set.side_effect = lambda k, v, **kw: store.__setitem__(k, v)
+    mock_redis.return_value = mock_r
 
-    state = get_job_state(report_id)
+    from app.core.progress import emit, get_state
+
+    emit("r1", "job1", "running", 50)
+    state = get_state("r1")
     assert state is not None
     assert state["jobs"]["job1"]["status"] == "running"
     assert state["jobs"]["job1"]["progress"] == 50
 
-    # Cleanup
-    _jobs.pop(report_id, None)
 
+@patch("app.core.progress._get_redis")
+def test_emit_multiple_jobs(mock_redis):
+    store = {}
+    mock_r = MagicMock()
+    mock_r.get.side_effect = lambda k: store.get(k)
+    mock_r.set.side_effect = lambda k, v, **kw: store.__setitem__(k, v)
+    mock_redis.return_value = mock_r
 
-def test_emit_multiple_jobs():
-    report_id = "test-report-multi"
-    _emit(report_id, "job1", "running", 30)
-    _emit(report_id, "job2", "complete", 100, {"result": "ok"})
+    from app.core.progress import emit, get_state
 
-    state = get_job_state(report_id)
+    emit("r2", "job1", "running", 30)
+    emit("r2", "job2", "complete", 100, {"result": "ok"})
+
+    state = get_state("r2")
     assert len(state["jobs"]) == 2
     assert state["jobs"]["job2"]["data"] == {"result": "ok"}
 
-    _jobs.pop(report_id, None)
 
+@patch("app.core.progress._get_redis")
+def test_get_state_missing(mock_redis):
+    mock_r = MagicMock()
+    mock_r.get.return_value = None
+    mock_redis.return_value = mock_r
 
-def test_get_job_state_missing():
-    assert get_job_state("nonexistent-id") is None
+    from app.core.progress import get_state
+    assert get_state("nonexistent-id") is None
 
 
 def test_health(client):

@@ -18,6 +18,17 @@ services:
     depends_on:
       - redis
 
+  worker:
+    build: ./backend
+    command: uv run celery -A app.worker worker --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite:///./perception.db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
   redis:
     image: redis:7-alpine
     ports:

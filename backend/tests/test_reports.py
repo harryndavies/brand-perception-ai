@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch, MagicMock
 
 from app.models.report import Report
 
@@ -42,7 +42,7 @@ def test_get_report_unauthorized(client):
     assert response.status_code in (401, 403)
 
 
-@patch("app.routes.reports.run_analysis", new_callable=AsyncMock)
+@patch("app.routes.reports.run_analysis")
 def test_create_report(mock_analysis, client, auth_headers):
     response = client.post("/api/reports", headers=auth_headers, json={
         "brand": "Tesla",
@@ -55,7 +55,7 @@ def test_create_report(mock_analysis, client, auth_headers):
     assert data["status"] == "processing"
 
 
-@patch("app.routes.reports.run_analysis", new_callable=AsyncMock)
+@patch("app.routes.reports.run_analysis")
 def test_create_report_limits_competitors(mock_analysis, client, auth_headers):
     response = client.post("/api/reports", headers=auth_headers, json={
         "brand": "Tesla",

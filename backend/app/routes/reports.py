@@ -1,5 +1,3 @@
-import asyncio
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -9,7 +7,8 @@ from app.core.auth import get_current_user
 from app.core.database import engine, get_session
 from app.models.report import Report
 from app.models.user import User
-from app.services.analysis import run_analysis, stream_progress
+from app.services.analysis import stream_progress
+from app.tasks import run_analysis
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -45,7 +44,7 @@ def get_report(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_report(
+def create_report(
     body: CreateReportRequest,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
@@ -60,10 +59,8 @@ async def create_report(
     session.commit()
     session.refresh(report)
 
-    # Fire off analysis in the background (non-blocking)
-    asyncio.create_task(
-        run_analysis(report.id, report.brand, report.competitors)
-    )
+    # Dispatch analysis to Celery worker via Redis broker
+    run_analysis.delay(report.id, report.brand, report.competitors)
 
     return report
 

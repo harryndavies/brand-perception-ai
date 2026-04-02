@@ -2,10 +2,63 @@
 
 A brand intelligence platform that analyses how brands are perceived across multiple dimensions using AI. It aggregates insights from multiple AI models to generate comprehensive brand reports covering sentiment analysis, brand pillar identification, and competitive positioning.
 
+## Architecture
+
+```
+                         +-------------------+
+                         |    Browser/UI     |
+                         |  React + Vite     |
+                         +--------+----------+
+                                  |
+                             HTTP / SSE
+                                  |
+                         +--------v----------+
+                         |      nginx        |
+                         |  (reverse proxy)  |
+                         +--------+----------+
+                                  |
+                           /api/* |
+                                  |
+                         +--------v----------+
+                         |  FastAPI Server   |
+                         |  (API + Auth)     |
+                         +---+----------+----+
+                             |          |
+                  POST /reports    SSE /stream
+                  dispatches task   polls progress
+                             |          |
+                         +---v----------v----+
+                         |      Redis        |
+                         | (broker + state)  |
+                         +---+----------+----+
+                             |          ^
+                      task queue     progress
+                             |      updates
+                         +---v----------+----+
+                         |  Celery Worker    |
+                         +---+---------+-----+
+                             |         |
+               +-------------+---------+-------------+
+               |             |                        |
+        +------v---+  +------v------+  +--------------v--+
+        | Claude   |  | GPT-4      |  | Gemini          |
+        | (brand   |  | (news      |  | (competitor     |
+        | analysis)|  | sentiment) |  | positioning)    |
+        +----------+  +------------+  +-----------------+
+               |             |                        |
+               +-------------+------------------------+
+                             |
+                    +--------v---------+
+                    |  Aggregate &     |
+                    |  Persist to DB   |
+                    +------------------+
+```
+
 ## Features
 
 - **Multi-model AI analysis** — Runs brand queries through Claude, GPT-4, and Gemini to triangulate perception data
-- **Real-time progress streaming** — Server-Sent Events deliver live analysis updates to the UI
+- **Event-driven task processing** — Celery workers consume analysis jobs from a Redis-backed message queue
+- **Real-time progress streaming** — Server-Sent Events deliver live analysis updates to the UI via Redis-backed state
 - **Brand pillar extraction** — Identifies and scores core brand attributes with confidence levels
 - **Sentiment scoring** — Quantifies brand sentiment on a -1.0 to 1.0 scale across news and social dimensions
 - **Competitor positioning** — Maps brands against competitors on premium and lifestyle axes
@@ -28,19 +81,25 @@ A brand intelligence platform that analyses how brands are perceived across mult
 ### Backend
 
 - FastAPI (Python 3.12)
+- Celery (task queue)
+- Redis (message broker + progress state)
 - SQLModel (SQLAlchemy + Pydantic)
 - SQLite (default, configurable)
 - Anthropic SDK
 - JWT authentication (python-jose + bcrypt)
 - Uvicorn
 
+### Infrastructure
+
+- Docker + Docker Compose
+- nginx (reverse proxy + SPA routing)
+- GitHub Actions CI (tests, type-check, build, Docker)
+
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 - An [Anthropic API key](https://console.anthropic.com/)
 
 ### Setup
@@ -52,13 +111,7 @@ A brand intelligence platform that analyses how brands are perceived across mult
    cd ai-brand-perception
    ```
 
-2. **Install frontend dependencies**
-
-   ```bash
-   npm install
-   ```
-
-3. **Configure environment variables**
+2. **Configure environment variables**
 
    Create a `.env` file in the project root:
 
@@ -68,63 +121,79 @@ A brand intelligence platform that analyses how brands are perceived across mult
    DATABASE_URL=sqlite:///./perception.db  # optional
    ```
 
-4. **Start the development servers**
+3. **Start all services**
 
    ```bash
-   npm run dev
+   docker compose up --build
    ```
 
-   This runs both servers concurrently:
-   - Frontend: [http://localhost:3000](http://localhost:3000)
-   - Backend: [http://localhost:8000](http://localhost:8000)
+   This starts:
+   - **Frontend** (nginx) — [http://localhost:3000](http://localhost:3000)
+   - **Backend** (FastAPI) — [http://localhost:8000](http://localhost:8000)
+   - **Worker** (Celery) — processes analysis jobs
+   - **Redis** — message broker and progress state
 
-   The Vite dev server proxies `/api` requests to the backend automatically.
+### Local Development (without Docker)
 
-### Docker
-
-Alternatively, run everything with Docker Compose:
+For frontend-only work, you can run Vite directly:
 
 ```bash
-docker compose up --build
+npm install
+npm run dev:frontend
 ```
 
-This starts the frontend (nginx on port 3000), backend (port 8000), and Redis. The nginx config proxies `/api` requests to the backend and handles SPA routing.
+The full analysis pipeline requires Redis and the Celery worker. Use Docker Compose for the complete stack.
 
-### Available Scripts
+### Running Tests
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Start frontend + backend concurrently |
-| `npm run dev:frontend` | Start Vite dev server only |
-| `npm run dev:backend` | Start FastAPI with uvicorn only |
-| `npm run build` | Build frontend for production |
+```bash
+# Frontend (Vitest)
+npm run test:frontend
+
+# Backend (pytest)
+npm run test:backend
+
+# Both
+npm run test
+```
 
 ## Project Structure
 
 ```
 ├── frontend/
+│   ├── Dockerfile
+│   ├── nginx.conf              # Reverse proxy + SPA config
 │   └── src/
-│       ├── components/    # Layout and UI components
-│       ├── pages/         # Route pages (dashboard, reports, analysis, settings)
-│       ├── stores/        # Zustand stores (auth, reports)
-│       ├── lib/           # API client and utilities
-│       └── types/         # TypeScript type definitions
+│       ├── components/         # Layout and UI components
+│       ├── pages/              # Route pages (dashboard, reports, analysis, settings)
+│       ├── stores/             # Zustand stores (auth, reports)
+│       ├── lib/                # API client and utilities
+│       ├── types/              # TypeScript type definitions
+│       └── test/               # Test setup and utilities
 ├── backend/
+│   ├── Dockerfile
 │   └── app/
-│       ├── models/        # SQLModel database models (user, report)
-│       ├── routes/        # API endpoints (auth, reports, usage)
-│       ├── services/      # AI analysis orchestration
-│       └── core/          # Config, database, and auth utilities
-└── package.json           # Workspace root with dev scripts
+│       ├── worker.py           # Celery app configuration
+│       ├── tasks.py            # Analysis Celery tasks
+│       ├── models/             # SQLModel database models (user, report)
+│       ├── routes/             # API endpoints (auth, reports, usage)
+│       ├── services/           # SSE streaming interface
+│       └── core/               # Config, database, auth, Redis progress
+├── docker-compose.yml          # Full stack orchestration
+├── .github/workflows/ci.yml   # CI pipeline
+└── package.json                # Workspace root with dev scripts
 ```
 
 ## How It Works
 
 1. A user creates a new analysis by entering a brand name and up to three competitors
-2. The backend fans out parallel AI queries to Claude, GPT-4, and Gemini
-3. Progress streams to the frontend in real time via SSE
-4. Results are aggregated — pillars merged, sentiment averaged, competitor positions collected
-5. The completed report is persisted and displayed with interactive charts and tabbed views
+2. The API server creates a report record and dispatches a Celery task via Redis
+3. The Celery worker picks up the job and fans out queries to Claude, GPT-4, and Gemini
+4. Progress updates are written to Redis as each model completes
+5. The frontend streams progress in real time via SSE, polling Redis-backed state
+6. Results are aggregated — pillars merged, sentiment averaged, competitor positions collected
+7. The completed report is persisted to the database and an `analysis.complete` event is published
+8. The frontend displays the report with interactive charts and tabbed views
 
 ## API Endpoints
 
@@ -134,7 +203,8 @@ This starts the frontend (nginx on port 3000), backend (port 8000), and Redis. T
 | `POST` | `/api/auth/login` | Log in |
 | `GET` | `/api/auth/me` | Get current user |
 | `GET` | `/api/reports` | List reports |
-| `POST` | `/api/reports` | Create a new analysis |
+| `POST` | `/api/reports` | Create a new analysis (dispatches Celery task) |
 | `GET` | `/api/reports/:id` | Get report details |
 | `GET` | `/api/reports/:id/stream` | SSE stream for analysis progress |
 | `GET` | `/api/usage` | Get usage stats |
+| `GET` | `/api/health` | Health check |

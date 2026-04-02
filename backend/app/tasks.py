@@ -219,7 +219,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
         progress.set_status(report_id, "failed")
         progress.publish_event(report_id, "analysis.failed", {
             "report_id": report_id,
-            "error": str(exc),
+            "error": "Analysis failed. Please try again.",
         })
         logger.exception("Analysis failed for report %s", report_id)
         raise self.retry(exc=exc, countdown=5)

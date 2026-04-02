@@ -1,9 +1,12 @@
+import json
+
 import pytest
+from unittest.mock import MagicMock
 from httpx import AsyncClient, ASGITransport
 from mongomock_motor import AsyncMongoMockClient
 
 from app.core.auth import create_access_token, hash_password
-from app.core import database
+from app.core import database, progress
 from app.core.encryption import encrypt
 from app.models.user import User
 
@@ -18,6 +21,25 @@ async def mock_mongo():
     database._test_db = mock_db
     yield mock_db
     database._test_db = None
+
+
+@pytest.fixture(autouse=True)
+def mock_redis():
+    """Replace the real Redis client with an in-memory dict for all tests."""
+    store = {}
+    mock_r = MagicMock()
+    mock_r.get.side_effect = lambda k: store.get(k)
+    mock_r.set.side_effect = lambda k, v, **kw: store.__setitem__(k, v)
+    mock_r.setex.side_effect = lambda k, t, v: store.__setitem__(k, v)
+    mock_r.delete.side_effect = lambda k: store.pop(k, None)
+    mock_r.incr.side_effect = lambda k: store.__setitem__(k, store.get(k, 0) + 1) or store[k]
+    mock_r.expire.return_value = True
+    mock_r.publish.return_value = 0
+
+    original = progress._redis
+    progress._redis = mock_r
+    yield mock_r
+    progress._redis = original
 
 
 @pytest.fixture(name="client")

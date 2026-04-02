@@ -179,10 +179,11 @@ npm run test
 │   └── app/
 │       ├── worker.py           # Celery app configuration
 │       ├── tasks.py            # Analysis Celery tasks
-│       ├── models/             # SQLModel database models (user, report)
+│       ├── models/             # Pydantic models for MongoDB (user, report)
 │       ├── routes/             # API endpoints (auth, reports, usage)
 │       ├── services/           # SSE streaming interface
-│       └── core/               # Config, database, auth, Redis progress
+│       ├── middleware.py        # Correlation ID + request logging
+│       └── core/               # Config, database, auth, logging, Redis progress
 ├── docker-compose.yml          # Full stack orchestration
 ├── .github/workflows/ci.yml   # CI pipeline
 └── package.json                # Workspace root with dev scripts

@@ -25,6 +25,19 @@ def _key(report_id: str) -> str:
     return f"progress:{report_id}"
 
 
+def init(report_id: str, job_ids: list[str]):
+    """Seed initial progress so SSE clients see 'pending' immediately."""
+    r = _get_redis()
+    state = {
+        "status": "processing",
+        "jobs": {
+            jid: {"id": jid, "status": "pending", "progress": 0, "data": None}
+            for jid in job_ids
+        },
+    }
+    r.set(_key(report_id), json.dumps(state), ex=600)
+
+
 def emit(report_id: str, job_id: str, status: str, progress: float, data: dict | None = None):
     """Update a single job's progress in Redis."""
     r = _get_redis()

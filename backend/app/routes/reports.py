@@ -6,6 +6,7 @@ from app.core.auth import get_current_user
 from app.core.database import get_async_db
 from app.models.report import Report
 from app.models.user import User
+from app.core.progress import init as init_progress
 from app.services.analysis import stream_progress
 from app.tasks import run_analysis
 
@@ -48,6 +49,9 @@ async def create_report(
         status="processing",
     )
     await db.reports.insert_one(report.to_doc())
+
+    # Seed Redis so SSE stream has data before the worker picks up the task
+    init_progress(report.id, ["ai-perception", "news-sentiment", "competitor-analysis"])
 
     # Dispatch analysis to Celery worker via Redis broker
     run_analysis.delay(report.id, report.brand, report.competitors)

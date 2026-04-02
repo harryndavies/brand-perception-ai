@@ -1,6 +1,6 @@
 export type AnalysisStatus = "pending" | "processing" | "complete" | "failed";
 
-export type JobStatus = "idle" | "running" | "complete" | "failed";
+export type JobStatus = "idle" | "pending" | "running" | "complete" | "failed";
 
 export interface BrandPillar {
   name: string;

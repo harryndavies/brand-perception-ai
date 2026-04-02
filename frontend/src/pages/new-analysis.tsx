@@ -50,6 +50,7 @@ const JOB_ICON: Record<string, React.ReactNode> = {
 
 const STATUS_COLOR: Record<JobStatus, string> = {
   idle: "text-muted-foreground",
+  pending: "text-amber-500",
   running: "text-indigo-500",
   complete: "text-emerald-500",
   failed: "text-destructive",

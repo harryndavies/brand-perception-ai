@@ -21,7 +21,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Brand Intelligence", lifespan=lifespan)
+app = FastAPI(title="Perception AI", lifespan=lifespan)
 
 # Correlation ID middleware (outermost so it wraps everything)
 app.add_middleware(CorrelationMiddleware)
@@ -40,4 +40,4 @@ app.include_router(reports.router)
 
 @app.get("/api/health")
 async def health():
-    return {"message": "Brand Intelligence backend is running"}
+    return {"message": "Perception AI backend is running"}

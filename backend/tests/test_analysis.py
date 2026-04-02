@@ -109,4 +109,4 @@ def test_get_state_missing(mock_redis):
 async def test_health(client):
     response = await client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["message"] == "Brand Intelligence backend is running"
+    assert response.json()["message"] == "Perception AI backend is running"

@@ -65,7 +65,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </svg>
         {!collapsed && (
           <span className="text-sm font-semibold tracking-tight">
-            Brand Intelligence
+            Perception AI
           </span>
         )}
       </div>

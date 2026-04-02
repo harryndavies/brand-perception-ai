@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { NewAnalysisDialog } from "@/components/new-analysis-dialog";
 import { api } from "@/lib/api";
 import type { AnalysisStatus } from "@/types";
 
@@ -35,9 +36,7 @@ export function ReportsListPage() {
             All completed brand analysis reports.
           </p>
         </div>
-        <Button render={<Link to="/analysis/new" />}>
-          New Analysis
-        </Button>
+        <NewAnalysisDialog trigger={<Button>New Analysis</Button>} />
       </div>
 
       {isLoading ? (
@@ -60,9 +59,7 @@ export function ReportsListPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Run an analysis to generate your first report.
           </p>
-          <Button render={<Link to="/analysis/new" />} className="mt-4">
-            New Analysis
-          </Button>
+          <NewAnalysisDialog trigger={<Button className="mt-4">New Analysis</Button>} />
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

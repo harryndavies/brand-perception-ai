@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from app.tasks import _parse_json, _generate_trend
+from app.tasks import _parse_json, _build_trend
 
 
 def test_parse_json_plain():
@@ -21,22 +21,42 @@ def test_parse_json_with_bare_fences():
     assert result == {"key": "value"}
 
 
-def test_generate_trend_length():
-    data = _generate_trend(0.5)
-    assert len(data) == 6
-    for point in data:
-        assert "date" in point
-        assert "sentiment" in point
-        assert "volume" in point
-        assert -1 <= point["sentiment"] <= 1
+@patch("app.tasks.get_sync_db")
+def test_build_trend_first_analysis(mock_db):
+    """First analysis for a brand returns a single data point."""
+    mock_collection = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.sort.return_value = mock_cursor
+    mock_cursor.limit.return_value = []
+    mock_collection.find.return_value = mock_cursor
+    mock_db.return_value = MagicMock(reports=mock_collection)
+
+    data = _build_trend("TestBrand", 0.75)
+    assert len(data) == 1
+    assert data[0]["sentiment"] == 0.75
 
 
-def test_generate_trend_bounds():
-    """Sentiment should stay within -1 to 1."""
-    for _ in range(20):
-        data = _generate_trend(0.95)
-        for point in data:
-            assert -1 <= point["sentiment"] <= 1
+@patch("app.tasks.get_sync_db")
+def test_build_trend_with_history(mock_db):
+    """Trend should include past analyses and the current one."""
+    from datetime import datetime, timezone
+
+    past_docs = [
+        {"sentiment_score": 0.5, "completed_at": datetime(2026, 1, 1, tzinfo=timezone.utc)},
+        {"sentiment_score": 0.6, "completed_at": datetime(2026, 2, 1, tzinfo=timezone.utc)},
+    ]
+    mock_collection = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.sort.return_value = mock_cursor
+    mock_cursor.limit.return_value = iter(past_docs)
+    mock_collection.find.return_value = mock_cursor
+    mock_db.return_value = MagicMock(reports=mock_collection)
+
+    data = _build_trend("TestBrand", 0.7)
+    assert len(data) == 3
+    assert data[0]["sentiment"] == 0.5
+    assert data[1]["sentiment"] == 0.6
+    assert data[2]["sentiment"] == 0.7
 
 
 @patch("app.core.progress._get_redis")

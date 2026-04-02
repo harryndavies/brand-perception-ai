@@ -61,13 +61,12 @@ async def test_create_report(mock_analysis, client, auth_headers):
 
 @pytest.mark.asyncio
 @patch("app.routes.reports.run_analysis")
-async def test_create_report_limits_competitors(mock_analysis, client, auth_headers):
+async def test_create_report_rejects_too_many_competitors(mock_analysis, client, auth_headers):
     response = await client.post("/api/reports", headers=auth_headers, json={
         "brand": "Tesla",
         "competitors": ["A", "B", "C", "D"],
     })
-    assert response.status_code == 201
-    assert len(response.json()["competitors"]) == 3
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

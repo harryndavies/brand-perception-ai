@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
-from sqlmodel import Session, select
 
 from app.core.auth import create_access_token, get_current_user, hash_password, verify_password
-from app.core.database import get_session
+from app.core.database import get_async_db
 from app.models.user import User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -33,8 +32,10 @@ class AuthResponse(BaseModel):
 
 
 @router.post("/signup", response_model=AuthResponse)
-def signup(body: SignupRequest, session: Session = Depends(get_session)):
-    existing = session.exec(select(User).where(User.email == body.email)).first()
+async def signup(body: SignupRequest):
+    db = get_async_db()
+
+    existing = await db.users.find_one({"email": body.email})
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
@@ -43,9 +44,7 @@ def signup(body: SignupRequest, session: Session = Depends(get_session)):
         email=body.email,
         hashed_password=hash_password(body.password),
     )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    await db.users.insert_one(user.to_doc())
 
     token = create_access_token(user.id)
     return AuthResponse(
@@ -55,11 +54,14 @@ def signup(body: SignupRequest, session: Session = Depends(get_session)):
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(body: LoginRequest, session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.email == body.email)).first()
-    if not user or not verify_password(body.password, user.hashed_password):
+async def login(body: LoginRequest):
+    db = get_async_db()
+
+    doc = await db.users.find_one({"email": body.email})
+    if not doc or not verify_password(body.password, doc["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
+    user = User.from_doc(doc)
     token = create_access_token(user.id)
     return AuthResponse(
         user=UserResponse(id=user.id, email=user.email, name=user.name, team=user.team),
@@ -68,5 +70,5 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
 
 
 @router.get("/me", response_model=UserResponse)
-def me(user: User = Depends(get_current_user)):
+async def me(user: User = Depends(get_current_user)):
     return UserResponse(id=user.id, email=user.email, name=user.name, team=user.team)

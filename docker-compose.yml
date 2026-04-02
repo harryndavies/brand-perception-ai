@@ -13,9 +13,10 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=sqlite:///./perception.db
+      - MONGODB_URL=mongodb://mongo:27017
       - REDIS_URL=redis://redis:6379/0
     depends_on:
+      - mongo
       - redis
 
   worker:
@@ -24,10 +25,18 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=sqlite:///./perception.db
+      - MONGODB_URL=mongodb://mongo:27017
       - REDIS_URL=redis://redis:6379/0
     depends_on:
+      - mongo
       - redis
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
 
   redis:
     image: redis:7-alpine
@@ -37,4 +46,5 @@ services:
       - redis-data:/data
 
 volumes:
+  mongo-data:
   redis-data:

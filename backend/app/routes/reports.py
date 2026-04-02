@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlmodel import Session, select
 
 from app.core.auth import get_current_user
-from app.core.database import engine, get_session
+from app.core.database import get_async_db
 from app.models.report import Report
 from app.models.user import User
 from app.services.analysis import stream_progress
@@ -19,57 +18,45 @@ class CreateReportRequest(BaseModel):
 
 
 @router.get("")
-def list_reports(
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    reports = session.exec(
-        select(Report).where(Report.user_id == user.id).order_by(Report.created_at.desc())
-    ).all()
-    return reports
+async def list_reports(user: User = Depends(get_current_user)):
+    db = get_async_db()
+    cursor = db.reports.find({"user_id": user.id}).sort("created_at", -1)
+    docs = await cursor.to_list(length=100)
+    return [Report.from_doc(doc).model_dump() for doc in docs]
 
 
 @router.get("/{report_id}")
-def get_report(
-    report_id: str,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    report = session.exec(
-        select(Report).where(Report.id == report_id, Report.user_id == user.id)
-    ).first()
-    if not report:
+async def get_report(report_id: str, user: User = Depends(get_current_user)):
+    db = get_async_db()
+    doc = await db.reports.find_one({"_id": report_id, "user_id": user.id})
+    if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
-    return report
+    return Report.from_doc(doc).model_dump()
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_report(
+async def create_report(
     body: CreateReportRequest,
     user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
 ):
+    db = get_async_db()
+
     report = Report(
         user_id=user.id,
         brand=body.brand,
         competitors=body.competitors[:3],
         status="processing",
     )
-    session.add(report)
-    session.commit()
-    session.refresh(report)
+    await db.reports.insert_one(report.to_doc())
 
     # Dispatch analysis to Celery worker via Redis broker
     run_analysis.delay(report.id, report.brand, report.competitors)
 
-    return report
+    return report.model_dump()
 
 
 @router.get("/{report_id}/stream")
-async def stream_report(
-    report_id: str,
-    token: str,
-):
+async def stream_report(report_id: str, token: str):
     # SSE can't send auth headers, so we accept token as query param
     from jose import JWTError, jwt as jose_jwt
     from app.core.config import SECRET_KEY, ALGORITHM
@@ -80,12 +67,10 @@ async def stream_report(
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    with Session(engine) as session:
-        report = session.exec(
-            select(Report).where(Report.id == report_id, Report.user_id == user_id)
-        ).first()
-        if not report:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    db = get_async_db()
+    doc = await db.reports.find_one({"_id": report_id, "user_id": user_id})
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
     return StreamingResponse(
         stream_progress(report_id),

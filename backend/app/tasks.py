@@ -13,12 +13,10 @@ import time
 from datetime import datetime, timezone
 
 import anthropic
-from sqlmodel import Session
 
-from app.core.database import engine
+from app.core.database import get_sync_db
 from app.core.logging import setup_logging, correlation_id
 from app.core import progress
-from app.models.report import Report
 from app.worker import celery_app
 
 setup_logging()
@@ -253,18 +251,19 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str]):
         trend_data = _generate_trend(avg_sentiment)
 
         # Persist to database
-        with Session(engine) as session:
-            report = session.get(Report, report_id)
-            if report:
-                report.status = "complete"
-                report.sentiment_score = avg_sentiment
-                report.pillars = pillars
-                report.model_perceptions = model_perceptions
-                report.competitor_positions = competitor_positions
-                report.trend_data = trend_data
-                report.completed_at = datetime.now(timezone.utc)
-                session.add(report)
-                session.commit()
+        db = get_sync_db()
+        db.reports.update_one(
+            {"_id": report_id},
+            {"$set": {
+                "status": "complete",
+                "sentiment_score": avg_sentiment,
+                "pillars": pillars,
+                "model_perceptions": model_perceptions,
+                "competitor_positions": competitor_positions,
+                "trend_data": trend_data,
+                "completed_at": datetime.now(timezone.utc),
+            }},
+        )
 
         progress.set_status(report_id, "complete")
 
@@ -290,12 +289,11 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str]):
         })
 
     except Exception as exc:
-        with Session(engine) as session:
-            report = session.get(Report, report_id)
-            if report:
-                report.status = "failed"
-                session.add(report)
-                session.commit()
+        db = get_sync_db()
+        db.reports.update_one(
+            {"_id": report_id},
+            {"$set": {"status": "failed"}},
+        )
 
         progress.set_status(report_id, "failed")
         progress.publish_event(report_id, "analysis.failed", {

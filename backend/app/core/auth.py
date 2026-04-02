@@ -4,10 +4,9 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from sqlmodel import Session, select
 
 from app.core.config import ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, SECRET_KEY
-from app.core.database import get_session
+from app.core.database import get_async_db
 from app.models.user import User
 
 security = HTTPBearer()
@@ -27,9 +26,8 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    session: Session = Depends(get_session),
 ) -> User:
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
@@ -37,7 +35,8 @@ def get_current_user(
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    user = session.exec(select(User).where(User.id == user_id)).first()
-    if not user:
+    db = get_async_db()
+    doc = await db.users.find_one({"_id": user_id})
+    if not doc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return user
+    return User.from_doc(doc)

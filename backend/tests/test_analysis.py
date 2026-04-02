@@ -1,3 +1,4 @@
+import pytest
 from unittest.mock import patch, MagicMock
 
 from app.tasks import _parse_json, _generate_trend
@@ -84,7 +85,8 @@ def test_get_state_missing(mock_redis):
     assert get_state("nonexistent-id") is None
 
 
-def test_health(client):
-    response = client.get("/api/health")
+@pytest.mark.asyncio
+async def test_health(client):
+    response = await client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["message"] == "Brand Intelligence backend is running"

@@ -1,8 +1,11 @@
+import pytest
+
 from app.models.report import Report
 
 
-def test_usage_empty(client, auth_headers):
-    response = client.get("/api/usage", headers=auth_headers)
+@pytest.mark.asyncio
+async def test_usage_empty(client, auth_headers):
+    response = await client.get("/api/usage", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["credits_used"] == 0
@@ -10,12 +13,13 @@ def test_usage_empty(client, auth_headers):
     assert data["analyses_this_month"] == 0
 
 
-def test_usage_with_reports(client, auth_headers, test_user, session):
+@pytest.mark.asyncio
+async def test_usage_with_reports(client, auth_headers, test_user, mock_mongo):
     for i in range(3):
-        session.add(Report(user_id=test_user.id, brand=f"Brand{i}", competitors=[], status="complete"))
-    session.commit()
+        report = Report(user_id=test_user.id, brand=f"Brand{i}", competitors=[], status="complete")
+        await mock_mongo.reports.insert_one(report.to_doc())
 
-    response = client.get("/api/usage", headers=auth_headers)
+    response = await client.get("/api/usage", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["credits_used"] == 3

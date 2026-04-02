@@ -50,7 +50,12 @@ A brand intelligence platform that analyses how brands are perceived across mult
                              |
                     +--------v---------+
                     |  Aggregate &     |
-                    |  Persist to DB   |
+                    |  Persist         |
+                    +--------+---------+
+                             |
+                    +--------v---------+
+                    |    MongoDB       |
+                    | (users, reports) |
                     +------------------+
 ```
 
@@ -83,8 +88,7 @@ A brand intelligence platform that analyses how brands are perceived across mult
 - FastAPI (Python 3.12)
 - Celery (task queue)
 - Redis (message broker + progress state)
-- SQLModel (SQLAlchemy + Pydantic)
-- SQLite (default, configurable)
+- MongoDB via Motor (async) + PyMongo (sync)
 - Anthropic SDK
 - JWT authentication (python-jose + bcrypt)
 - Uvicorn
@@ -118,7 +122,6 @@ A brand intelligence platform that analyses how brands are perceived across mult
    ```
    ANTHROPIC_API_KEY=your-api-key-here
    SECRET_KEY=your-jwt-secret        # optional, defaults to dev secret
-   DATABASE_URL=sqlite:///./perception.db  # optional
    ```
 
 3. **Start all services**
@@ -131,6 +134,7 @@ A brand intelligence platform that analyses how brands are perceived across mult
    - **Frontend** (nginx) — [http://localhost:3000](http://localhost:3000)
    - **Backend** (FastAPI) — [http://localhost:8000](http://localhost:8000)
    - **Worker** (Celery) — processes analysis jobs
+   - **MongoDB** — document database
    - **Redis** — message broker and progress state
 
 ### Local Development (without Docker)

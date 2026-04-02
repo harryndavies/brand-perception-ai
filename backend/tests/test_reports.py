@@ -1,50 +1,54 @@
+import pytest
 from unittest.mock import patch, MagicMock
 
 from app.models.report import Report
 
 
-def test_list_reports_empty(client, auth_headers):
-    response = client.get("/api/reports", headers=auth_headers)
+@pytest.mark.asyncio
+async def test_list_reports_empty(client, auth_headers):
+    response = await client.get("/api/reports", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_list_reports(client, auth_headers, test_user, session):
+@pytest.mark.asyncio
+async def test_list_reports(client, auth_headers, test_user, mock_mongo):
     report = Report(user_id=test_user.id, brand="Nike", competitors=["Adidas"], status="complete")
-    session.add(report)
-    session.commit()
+    await mock_mongo.reports.insert_one(report.to_doc())
 
-    response = client.get("/api/reports", headers=auth_headers)
+    response = await client.get("/api/reports", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
     assert data[0]["brand"] == "Nike"
 
 
-def test_get_report(client, auth_headers, test_user, session):
+@pytest.mark.asyncio
+async def test_get_report(client, auth_headers, test_user, mock_mongo):
     report = Report(user_id=test_user.id, brand="Nike", competitors=[], status="complete")
-    session.add(report)
-    session.commit()
-    session.refresh(report)
+    await mock_mongo.reports.insert_one(report.to_doc())
 
-    response = client.get(f"/api/reports/{report.id}", headers=auth_headers)
+    response = await client.get(f"/api/reports/{report.id}", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["brand"] == "Nike"
 
 
-def test_get_report_not_found(client, auth_headers):
-    response = client.get("/api/reports/nonexistent", headers=auth_headers)
+@pytest.mark.asyncio
+async def test_get_report_not_found(client, auth_headers):
+    response = await client.get("/api/reports/nonexistent", headers=auth_headers)
     assert response.status_code == 404
 
 
-def test_get_report_unauthorized(client):
-    response = client.get("/api/reports/some-id")
+@pytest.mark.asyncio
+async def test_get_report_unauthorized(client):
+    response = await client.get("/api/reports/some-id")
     assert response.status_code in (401, 403)
 
 
+@pytest.mark.asyncio
 @patch("app.routes.reports.run_analysis")
-def test_create_report(mock_analysis, client, auth_headers):
-    response = client.post("/api/reports", headers=auth_headers, json={
+async def test_create_report(mock_analysis, client, auth_headers):
+    response = await client.post("/api/reports", headers=auth_headers, json={
         "brand": "Tesla",
         "competitors": ["Ford", "BMW"],
     })
@@ -55,9 +59,10 @@ def test_create_report(mock_analysis, client, auth_headers):
     assert data["status"] == "processing"
 
 
+@pytest.mark.asyncio
 @patch("app.routes.reports.run_analysis")
-def test_create_report_limits_competitors(mock_analysis, client, auth_headers):
-    response = client.post("/api/reports", headers=auth_headers, json={
+async def test_create_report_limits_competitors(mock_analysis, client, auth_headers):
+    response = await client.post("/api/reports", headers=auth_headers, json={
         "brand": "Tesla",
         "competitors": ["A", "B", "C", "D"],
     })
@@ -65,20 +70,18 @@ def test_create_report_limits_competitors(mock_analysis, client, auth_headers):
     assert len(response.json()["competitors"]) == 3
 
 
-def test_list_reports_isolation(client, auth_headers, test_user, session):
+@pytest.mark.asyncio
+async def test_list_reports_isolation(client, auth_headers, test_user, mock_mongo):
     """Reports from other users should not be visible."""
     from app.core.auth import hash_password
     from app.models.user import User
 
     other = User(name="Other", email="other@example.com", hashed_password=hash_password("pass"))
-    session.add(other)
-    session.commit()
-    session.refresh(other)
+    await mock_mongo.users.insert_one(other.to_doc())
 
     report = Report(user_id=other.id, brand="Secret", competitors=[], status="complete")
-    session.add(report)
-    session.commit()
+    await mock_mongo.reports.insert_one(report.to_doc())
 
-    response = client.get("/api/reports", headers=auth_headers)
+    response = await client.get("/api/reports", headers=auth_headers)
     assert response.status_code == 200
     assert len(response.json()) == 0

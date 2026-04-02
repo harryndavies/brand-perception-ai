@@ -8,6 +8,7 @@ import {
   CardDescription,
   CardHeader,
 } from "@/components/ui/card";
+import { NewAnalysisDialog } from "@/components/new-analysis-dialog";
 import {
   Table,
   TableBody,
@@ -47,16 +48,11 @@ function SentimentBadge({ score }: { score: number | null }) {
   return <span className={color}>{label} ({score > 0 ? "+" : ""}{score.toFixed(2)})</span>;
 }
 
-function UsageCards() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["usage"],
-    queryFn: api.usage.get,
-  });
-
+function StatsCards({ reports, isLoading }: { reports: BrandReport[]; isLoading: boolean }) {
   if (isLoading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-3">
-        {[0, 1, 2].map((i) => (
+      <div className="grid gap-4 sm:grid-cols-2">
+        {[0, 1].map((i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
               <Skeleton className="h-4 w-24" />
@@ -70,38 +66,31 @@ function UsageCards() {
     );
   }
 
-  const usage = data ?? { credits_used: 0, credits_total: 100, analyses_this_month: 0 };
+  const completed = reports.filter((r) => r.status === "complete");
+  const avgSentiment =
+    completed.length > 0
+      ? completed.reduce((sum, r) => sum + (r.sentiment_score ?? 0), 0) / completed.length
+      : null;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2">
       <Card>
         <CardHeader className="pb-2">
-          <CardDescription>Credits Used</CardDescription>
+          <CardDescription>Total Analyses</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-2xl font-bold">
-            {usage.credits_used}
-            <span className="text-sm font-normal text-muted-foreground">
-              /{usage.credits_total}
-            </span>
-          </p>
+          <p className="text-2xl font-bold">{reports.length}</p>
         </CardContent>
       </Card>
       <Card>
         <CardHeader className="pb-2">
-          <CardDescription>Analyses This Month</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-bold">{usage.analyses_this_month}</p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardDescription>Credits Remaining</CardDescription>
+          <CardDescription>Average Sentiment</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-2xl font-bold">
-            {usage.credits_total - usage.credits_used}
+            {avgSentiment !== null
+              ? `${avgSentiment > 0 ? "+" : ""}${avgSentiment.toFixed(2)}`
+              : "--"}
           </p>
         </CardContent>
       </Card>
@@ -133,9 +122,7 @@ function ReportsTable({ reports, isLoading }: { reports: BrandReport[]; isLoadin
         <p className="mt-1 text-sm text-muted-foreground">
           Run your first brand analysis to get started.
         </p>
-        <Button render={<Link to="/analysis/new" />} className="mt-4">
-          New Analysis
-        </Button>
+        <NewAnalysisDialog trigger={<Button className="mt-4">New Analysis</Button>} />
       </div>
     );
   }
@@ -203,16 +190,18 @@ export function DashboardPage() {
             Overview of your brand analysis runs.
           </p>
         </div>
-        <Button render={<Link to="/analysis/new" />}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 h-4 w-4">
-            <path d="M5 12h14" />
-            <path d="M12 5v14" />
-          </svg>
-          New Analysis
-        </Button>
+        <NewAnalysisDialog trigger={
+          <Button>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 h-4 w-4">
+              <path d="M5 12h14" />
+              <path d="M12 5v14" />
+            </svg>
+            New Analysis
+          </Button>
+        } />
       </div>
 
-      <UsageCards />
+      <StatsCards reports={reports ?? []} isLoading={isLoading} />
       <ReportsTable reports={reports ?? []} isLoading={isLoading} />
     </div>
   );

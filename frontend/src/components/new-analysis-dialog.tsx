@@ -7,17 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import type { JobStatus } from "@/types";
 
-export function NewAnalysisPage() {
+export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) {
   const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
   const [brand, setBrand] = useState("");
   const [competitors, setCompetitors] = useState(["", "", ""]);
   const [isRunning, setIsRunning] = useState(false);
@@ -27,6 +29,14 @@ export function NewAnalysisPage() {
   useEffect(() => {
     return () => { eventSourceRef.current?.close(); };
   }, []);
+
+  function reset() {
+    setBrand("");
+    setCompetitors(["", "", ""]);
+    setIsRunning(false);
+    setStatus("idle");
+    eventSourceRef.current?.close();
+  }
 
   const connectSSE = useCallback(
     (reportId: string) => {
@@ -46,7 +56,11 @@ export function NewAnalysisPage() {
 
       es.addEventListener("complete", () => {
         es.close();
-        setTimeout(() => navigate(`/reports/${reportId}`), 600);
+        setTimeout(() => {
+          setOpen(false);
+          reset();
+          navigate(`/reports/${reportId}`);
+        }, 600);
       });
 
       es.addEventListener("error", () => {
@@ -97,62 +111,56 @@ export function NewAnalysisPage() {
     "outline" as const;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">New Analysis</h1>
-        <p className="text-muted-foreground">
-          Enter a brand to analyse its perception using Claude AI.
-        </p>
-      </div>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && isRunning && status !== "failed") return; // prevent closing while running
+        setOpen(nextOpen);
+        if (!nextOpen) reset();
+      }}
+    >
+      <DialogTrigger render={trigger} />
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isRunning ? `Analysing ${brand}` : "New Analysis"}</DialogTitle>
+          <DialogDescription>
+            {isRunning
+              ? "Running brand perception, news sentiment, and competitor analysis."
+              : "Enter a brand to analyse its perception using Claude AI."}
+          </DialogDescription>
+        </DialogHeader>
 
-      {!isRunning ? (
-        <Card>
-          <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="brand">Brand name</Label>
+        {!isRunning ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="brand">Brand name</Label>
+              <Input
+                id="brand"
+                placeholder="e.g. Arc'teryx, Notion, Stripe..."
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Competitors (optional)</Label>
+              {competitors.map((comp, i) => (
                 <Input
-                  id="brand"
-                  placeholder="e.g. Arc'teryx, Notion, Stripe..."
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                  autoFocus
-                  className="text-base"
+                  key={i}
+                  placeholder={`Competitor ${i + 1}`}
+                  value={comp}
+                  onChange={(e) => updateCompetitor(i, e.target.value)}
                 />
-              </div>
+              ))}
+            </div>
 
-              <div className="space-y-3">
-                <Label>Competitors (optional)</Label>
-                <p className="text-sm text-muted-foreground">
-                  Add up to 3 competitor brands for comparison.
-                </p>
-                {competitors.map((comp, i) => (
-                  <Input
-                    key={i}
-                    placeholder={`Competitor ${i + 1}`}
-                    value={comp}
-                    onChange={(e) => updateCompetitor(i, e.target.value)}
-                  />
-                ))}
-              </div>
-
-              <Button type="submit" className="w-full" disabled={!brand.trim()}>
-                Start Analysis
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Analysing <span className="text-indigo-500">{brand}</span>
-            </CardTitle>
-            <CardDescription>
-              Running brand perception, news sentiment, and competitor analysis.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+            <Button type="submit" className="w-full" disabled={!brand.trim()}>
+              Start Analysis
+            </Button>
+          </form>
+        ) : (
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Analysis</span>
               <Badge variant={badgeVariant}>{statusLabel}</Badge>
@@ -165,13 +173,18 @@ export function NewAnalysisPage() {
               <Progress value={0} className="h-2" />
             )}
             {status === "failed" && (
-              <p className="text-sm text-destructive">
-                Something went wrong. Please try again.
-              </p>
+              <div className="space-y-2">
+                <p className="text-sm text-destructive">
+                  Something went wrong. Please try again.
+                </p>
+                <Button variant="outline" className="w-full" onClick={reset}>
+                  Try Again
+                </Button>
+              </div>
             )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

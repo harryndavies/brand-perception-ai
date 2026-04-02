@@ -6,10 +6,8 @@ import { AuthLayout } from "@/components/layout/auth-layout";
 import { LoginPage } from "@/pages/login";
 import { SignupPage } from "@/pages/signup";
 import { DashboardPage } from "@/pages/dashboard";
-import { NewAnalysisPage } from "@/pages/new-analysis";
 import { ReportPage } from "@/pages/report";
 import { ReportsListPage } from "@/pages/reports-list";
-import { SettingsPage } from "@/pages/settings";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,10 +30,8 @@ function App() {
             </Route>
             <Route element={<AppLayout />}>
               <Route path="/" element={<DashboardPage />} />
-              <Route path="/analysis/new" element={<NewAnalysisPage />} />
               <Route path="/reports" element={<ReportsListPage />} />
               <Route path="/reports/:id" element={<ReportPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

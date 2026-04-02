@@ -7,7 +7,6 @@ Progress is tracked via Redis so the API can stream updates to clients.
 import json
 import logging
 import os
-import random
 import re
 import time
 from datetime import datetime, timezone
@@ -78,20 +77,34 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text.strip())
 
 
-def _generate_trend(current_sentiment: float) -> list[dict]:
-    months = 6
+def _build_trend(brand: str, current_sentiment: float) -> list[dict]:
+    """Build trend data from past completed analyses of this brand."""
+    db = get_sync_db()
+    past = list(
+        db.reports.find(
+            {"brand": {"$regex": f"^{re.escape(brand)}$", "$options": "i"}, "status": "complete"},
+            {"sentiment_score": 1, "completed_at": 1},
+        )
+        .sort("completed_at", 1)
+        .limit(50)
+    )
+
     data = []
-    sentiment = current_sentiment - random.uniform(0.05, 0.15)
-    for i in range(months):
-        month = 10 + i if 10 + i <= 12 else (10 + i) - 12
-        year = 2025 if month >= 10 else 2026
-        sentiment += random.uniform(-0.03, 0.06)
-        sentiment = max(-1, min(1, sentiment))
-        data.append({
-            "date": f"{year}-{month:02d}-01",
-            "sentiment": round(sentiment, 2),
-            "volume": random.randint(800, 2200),
-        })
+    for doc in past:
+        if doc.get("sentiment_score") is not None and doc.get("completed_at"):
+            data.append({
+                "date": doc["completed_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "sentiment": doc["sentiment_score"],
+                "volume": 1,
+            })
+
+    # Always include the current analysis as the latest point
+    data.append({
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "sentiment": current_sentiment,
+        "volume": 1,
+    })
+
     return data
 
 
@@ -147,7 +160,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str]):
 
         sentiments = [s["sentiment"] for _, s in sections]
         avg_sentiment = round(sum(sentiments) / len(sentiments), 2)
-        trend_data = _generate_trend(avg_sentiment)
+        trend_data = _build_trend(brand, avg_sentiment)
 
         progress.emit(report_id, "analysis", "complete", 100)
 

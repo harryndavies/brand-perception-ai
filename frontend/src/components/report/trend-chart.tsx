@@ -15,7 +15,7 @@ interface TrendChartProps {
 }
 
 export function TrendChart({ data }: TrendChartProps) {
-  if (data.length < 2) {
+  if (data.length < 1) {
     return (
       <Card>
         <CardHeader>

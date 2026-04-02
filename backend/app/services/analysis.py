@@ -10,7 +10,10 @@ import logging
 import re
 from typing import AsyncGenerator
 
+import redis as sync_redis
+
 from app.core import progress
+from app.core.progress import REDIS_URL
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +33,6 @@ def get_job_state(report_id: str) -> dict | None:
 
 async def stream_progress(report_id: str) -> AsyncGenerator[str, None]:
     """Yield SSE events for a running analysis using Redis pub/sub."""
-    import redis as sync_redis
-    from app.core.progress import REDIS_URL
-
     r = sync_redis.from_url(REDIS_URL, decode_responses=True)
     pubsub = r.pubsub()
     pubsub.subscribe(f"progress:channel:{report_id}")

@@ -56,6 +56,12 @@ async def create_report(
             detail="Rate limit exceeded. Try again shortly.",
         )
 
+    if not user.encrypted_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please add your Anthropic API key before running an analysis.",
+        )
+
     db = get_async_db()
 
     report = Report(
@@ -70,7 +76,7 @@ async def create_report(
     init_progress(report.id, ["analysis"])
 
     # Dispatch analysis to Celery worker via Redis broker
-    run_analysis.delay(report.id, report.brand, report.competitors)
+    run_analysis.delay(report.id, report.brand, report.competitors, user.id)
 
     return report.model_dump()
 

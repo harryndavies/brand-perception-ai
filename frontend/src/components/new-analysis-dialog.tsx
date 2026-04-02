@@ -15,10 +15,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import type { JobStatus } from "@/types";
 
 export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const hasKey = user?.has_api_key ?? false;
   const [open, setOpen] = useState(false);
   const [brand, setBrand] = useState("");
   const [competitors, setCompetitors] = useState(["", "", ""]);
@@ -131,34 +134,42 @@ export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) 
         </DialogHeader>
 
         {!isRunning ? (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="brand">Brand name</Label>
-              <Input
-                id="brand"
-                placeholder="e.g. Arc'teryx, Notion, Stripe..."
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                autoFocus
-              />
+          !hasKey ? (
+            <div className="space-y-3 text-center py-2">
+              <p className="text-sm text-muted-foreground">
+                Add your Anthropic API key to run analyses. Click the key icon in the sidebar to get started.
+              </p>
             </div>
-
-            <div className="space-y-2">
-              <Label>Competitors (optional)</Label>
-              {competitors.map((comp, i) => (
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="brand">Brand name</Label>
                 <Input
-                  key={i}
-                  placeholder={`Competitor ${i + 1}`}
-                  value={comp}
-                  onChange={(e) => updateCompetitor(i, e.target.value)}
+                  id="brand"
+                  placeholder="e.g. Arc'teryx, Notion, Stripe..."
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  autoFocus
                 />
-              ))}
-            </div>
+              </div>
 
-            <Button type="submit" className="w-full" disabled={!brand.trim()}>
-              Start Analysis
-            </Button>
-          </form>
+              <div className="space-y-2">
+                <Label>Competitors (optional)</Label>
+                {competitors.map((comp, i) => (
+                  <Input
+                    key={i}
+                    placeholder={`Competitor ${i + 1}`}
+                    value={comp}
+                    onChange={(e) => updateCompetitor(i, e.target.value)}
+                  />
+                ))}
+              </div>
+
+              <Button type="submit" className="w-full" disabled={!brand.trim()}>
+                Start Analysis
+              </Button>
+            </form>
+          )
         ) : (
           <div className="space-y-4">
             <div className="flex items-center justify-between">

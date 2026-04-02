@@ -60,14 +60,14 @@ def _make_redis_store():
 # ── Task tests ───────────────────────────────────────────────────────────────
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._anthropic_client")
+@patch("app.tasks._get_client")
 @patch("app.tasks.get_sync_db")
 def test_run_analysis_success(mock_db, mock_client, mock_redis):
     """Full happy-path: API returns valid JSON, DB is updated, progress is set."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
+    mock_client.return_value.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
 
     mock_collection = MagicMock()
     mock_db.return_value = MagicMock(reports=mock_collection)
@@ -93,14 +93,14 @@ def test_run_analysis_success(mock_db, mock_client, mock_redis):
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._anthropic_client")
+@patch("app.tasks._get_client")
 @patch("app.tasks.get_sync_db")
 def test_run_analysis_builds_model_perceptions(mock_db, mock_client, mock_redis):
     """Model perceptions should map to the three analysis sections."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
+    mock_client.return_value.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
     mock_db.return_value = MagicMock(reports=MagicMock())
 
     from app.tasks import run_analysis
@@ -115,14 +115,14 @@ def test_run_analysis_builds_model_perceptions(mock_db, mock_client, mock_redis)
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._anthropic_client")
+@patch("app.tasks._get_client")
 @patch("app.tasks.get_sync_db")
 def test_run_analysis_api_failure_marks_failed(mock_db, mock_client, mock_redis):
     """When the Claude API raises, report status should be set to failed."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.messages.create.side_effect = Exception("API timeout")
+    mock_client.return_value.messages.create.side_effect = Exception("API timeout")
 
     mock_collection = MagicMock()
     mock_db.return_value = MagicMock(reports=mock_collection)
@@ -143,14 +143,14 @@ def test_run_analysis_api_failure_marks_failed(mock_db, mock_client, mock_redis)
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._anthropic_client")
+@patch("app.tasks._get_client")
 @patch("app.tasks.get_sync_db")
 def test_run_analysis_invalid_json_marks_failed(mock_db, mock_client, mock_redis):
     """When Claude returns unparseable JSON, report should be marked failed."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.messages.create.return_value = _mock_message("not valid json at all")
+    mock_client.return_value.messages.create.return_value = _mock_message("not valid json at all")
 
     mock_collection = MagicMock()
     mock_db.return_value = MagicMock(reports=mock_collection)
@@ -165,7 +165,7 @@ def test_run_analysis_invalid_json_marks_failed(mock_db, mock_client, mock_redis
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._anthropic_client")
+@patch("app.tasks._get_client")
 @patch("app.tasks.get_sync_db")
 def test_run_analysis_emits_running_then_complete(mock_db, mock_client, mock_redis):
     """Progress should transition from running to complete."""
@@ -184,7 +184,7 @@ def test_run_analysis_emits_running_then_complete(mock_db, mock_client, mock_red
 
     mock_r.set.side_effect = capture_set
 
-    mock_client.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
+    mock_client.return_value.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
     mock_db.return_value = MagicMock(reports=MagicMock())
 
     from app.tasks import run_analysis

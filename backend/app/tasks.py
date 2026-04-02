@@ -6,7 +6,6 @@ Progress is tracked via Redis so the API can stream updates to clients.
 
 import json
 import logging
-import os
 import re
 import time
 from datetime import datetime, timezone
@@ -21,7 +20,15 @@ from app.worker import celery_app
 setup_logging()
 logger = logging.getLogger(__name__)
 
-_anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+def _get_client(user_id: str) -> anthropic.Anthropic:
+    """Return an Anthropic client using the user's encrypted API key."""
+    from app.core.encryption import decrypt
+
+    db = get_sync_db()
+    doc = db.users.find_one({"_id": user_id}, {"encrypted_api_key": 1})
+    if not doc or not doc.get("encrypted_api_key"):
+        raise RuntimeError("No API key found for user")
+    return anthropic.Anthropic(api_key=decrypt(doc["encrypted_api_key"]))
 
 
 # ── Prompt ──────────────────────────────────────────────────────────────────
@@ -111,7 +118,7 @@ def _build_trend(brand: str, current_sentiment: float) -> list[dict]:
 # ── Main Celery task ─────────────────────────────────────────────────────────
 
 @celery_app.task(name="app.tasks.run_analysis", bind=True, max_retries=2)
-def run_analysis(self, report_id: str, brand: str, competitors: list[str]):
+def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_id: str | None = None):
     """Run a single Claude call to analyse a brand.
 
     Runs as a Celery task in a worker process. Progress is published to
@@ -132,7 +139,8 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str]):
         competitor_str = ", ".join(competitors) if competitors else "general market"
         prompt = ANALYSIS_PROMPT.format(brand=brand, competitors=competitor_str)
 
-        message = _anthropic_client.messages.create(
+        client = _get_client(user_id)
+        message = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],

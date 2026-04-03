@@ -146,8 +146,7 @@ def _build_trend(brand: str, avg_sentiment: float, model_keys: list[str]) -> lis
 
 
 def _run_single_model(user_id: str, model_key: str, prompt: str, report_id: str) -> dict:
-    """Call one model and emit progress updates."""
-    progress.emit(report_id, model_key, "running", 0)
+    """Call one model and emit completion when done."""
     start = time.perf_counter()
 
     spec = MODELS[model_key]
@@ -189,6 +188,10 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
     try:
         competitor_str = ", ".join(competitors) if competitors else "general market"
         prompt = ANALYSIS_PROMPT.format(brand=brand, competitors=competitor_str)
+
+        # Mark all models as running before fan-out
+        for mk in model_keys:
+            progress.emit(report_id, mk, "running", 0)
 
         # Fan out across models in parallel
         results = []

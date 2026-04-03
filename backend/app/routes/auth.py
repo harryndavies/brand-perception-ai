@@ -1,16 +1,16 @@
-from typing import Literal
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
 from app.core.auth import create_access_token, get_current_user, hash_password, verify_password
+from app.core.config import settings
 from app.core.database import get_async_db
 from app.core.encryption import encrypt
+from app.core.enums import Provider
+from app.core.progress import _get_redis
 from app.models.user import User
+from app.services.rate_limiter import check_rate_limit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-PROVIDERS = ("anthropic", "openai", "google")
 
 
 class SignupRequest(BaseModel):
@@ -38,8 +38,15 @@ class AuthResponse(BaseModel):
     token: str
 
 
+def _auth_rate_limit_key(request: Request) -> str:
+    client_ip = request.client.host if request.client else "unknown"
+    return f"ratelimit:auth:{client_ip}"
+
+
 @router.post("/signup", response_model=AuthResponse)
-async def signup(body: SignupRequest):
+async def signup(body: SignupRequest, request: Request):
+    check_rate_limit(_auth_rate_limit_key(request), settings.auth_rate_limit_window, settings.auth_rate_limit_max)
+
     db = get_async_db()
 
     existing = await db.users.find_one({"email": body.email})
@@ -61,7 +68,9 @@ async def signup(body: SignupRequest):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, request: Request):
+    check_rate_limit(_auth_rate_limit_key(request), settings.auth_rate_limit_window, settings.auth_rate_limit_max)
+
     db = get_async_db()
 
     doc = await db.users.find_one({"email": body.email})
@@ -82,7 +91,7 @@ async def me(user: User = Depends(get_current_user)):
 
 
 class ApiKeyRequest(BaseModel):
-    provider: Literal["anthropic", "openai", "google"]
+    provider: Provider
     api_key: str = Field(..., min_length=1, max_length=200)
 
 
@@ -94,14 +103,13 @@ async def set_api_key(body: ApiKeyRequest, user: User = Depends(get_current_user
         {"_id": user.id},
         {"$set": {f"api_keys.{body.provider}": encrypted}},
     )
-    from app.core.progress import _get_redis
     _get_redis().delete(f"user:{user.id}")
     return {"provider": body.provider, "saved": True}
 
 
 @router.delete("/api-key/{provider}")
 async def delete_api_key(
-    provider: Literal["anthropic", "openai", "google"],
+    provider: Provider,
     user: User = Depends(get_current_user),
 ):
     db = get_async_db()
@@ -109,7 +117,6 @@ async def delete_api_key(
         {"_id": user.id},
         {"$unset": {f"api_keys.{provider}": ""}},
     )
-    from app.core.progress import _get_redis
     _get_redis().delete(f"user:{user.id}")
     return {"provider": provider, "removed": True}
 
@@ -118,8 +125,8 @@ def _user_response(user: User) -> UserResponse:
     # Support both legacy single key and new multi-key
     provider_list = list(user.api_keys.keys())
     has_key = len(provider_list) > 0 or user.encrypted_api_key is not None
-    if user.encrypted_api_key and "anthropic" not in provider_list:
-        provider_list.append("anthropic")
+    if user.encrypted_api_key and Provider.ANTHROPIC not in provider_list:
+        provider_list.append(Provider.ANTHROPIC)
     return UserResponse(
         id=user.id,
         email=user.email,

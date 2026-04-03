@@ -5,11 +5,11 @@ the API server and Celery worker processes.
 """
 
 import json
-import os
 
 import redis
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from app.core.config import settings
+from app.core.enums import ReportStatus
 
 _redis: redis.Redis | None = None
 
@@ -17,7 +17,7 @@ _redis: redis.Redis | None = None
 def _get_redis() -> redis.Redis:
     global _redis
     if _redis is None:
-        _redis = redis.from_url(REDIS_URL, decode_responses=True)
+        _redis = redis.from_url(settings.redis_url, decode_responses=True)
     return _redis
 
 
@@ -29,9 +29,9 @@ def init(report_id: str, job_ids: list[str]):
     """Seed initial progress so SSE clients see 'pending' immediately."""
     r = _get_redis()
     state = {
-        "status": "processing",
+        "status": ReportStatus.PROCESSING,
         "jobs": {
-            jid: {"id": jid, "status": "pending", "progress": 0, "data": None}
+            jid: {"id": jid, "status": ReportStatus.PENDING, "progress": 0, "data": None}
             for jid in job_ids
         },
     }
@@ -47,7 +47,7 @@ def emit(report_id: str, job_id: str, status: str, progress: float, data: dict |
     r = _get_redis()
     key = _key(report_id)
 
-    state = get_state(report_id) or {"jobs": {}, "status": "processing"}
+    state = get_state(report_id) or {"jobs": {}, "status": ReportStatus.PROCESSING}
     state["jobs"][job_id] = {
         "id": job_id,
         "status": status,
@@ -55,7 +55,7 @@ def emit(report_id: str, job_id: str, status: str, progress: float, data: dict |
         "data": data,
     }
 
-    r.set(key, json.dumps(state), ex=600)  # expire after 10 min
+    r.set(key, json.dumps(state), ex=600)
     r.publish(_channel(report_id), "update")
 
 
@@ -64,7 +64,7 @@ def set_status(report_id: str, status: str):
     r = _get_redis()
     key = _key(report_id)
 
-    state = get_state(report_id) or {"jobs": {}, "status": "processing"}
+    state = get_state(report_id) or {"jobs": {}, "status": ReportStatus.PROCESSING}
     state["status"] = status
     r.set(key, json.dumps(state), ex=600)
     r.publish(_channel(report_id), "update")

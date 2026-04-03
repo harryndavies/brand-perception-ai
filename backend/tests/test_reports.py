@@ -46,7 +46,7 @@ async def test_get_report_unauthorized(client):
 
 
 @pytest.mark.asyncio
-@patch("app.routes.reports.run_analysis")
+@patch("app.services.report_service.run_analysis")
 async def test_create_report(mock_analysis, client, auth_headers):
     response = await client.post("/api/reports", headers=auth_headers, json={
         "brand": "Tesla",
@@ -60,7 +60,7 @@ async def test_create_report(mock_analysis, client, auth_headers):
 
 
 @pytest.mark.asyncio
-@patch("app.routes.reports.run_analysis")
+@patch("app.services.report_service.run_analysis")
 async def test_create_report_rejects_too_many_competitors(mock_analysis, client, auth_headers):
     response = await client.post("/api/reports", headers=auth_headers, json={
         "brand": "Tesla",

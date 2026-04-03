@@ -5,9 +5,10 @@ from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user
 from app.core.database import get_async_db
+from app.core.enums import DEFAULT_MODEL
 from app.models.schedule import Schedule
 from app.models.user import User
-from app.services.providers import MODELS
+from app.services.report_service import validate_models, validate_provider_keys
 
 router = APIRouter(prefix="/api/schedules", tags=["schedules"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/schedules", tags=["schedules"])
 class CreateScheduleRequest(BaseModel):
     brand: str = Field(..., min_length=1, max_length=100)
     competitors: list[str] = Field(default=[], max_length=3)
-    models: list[str] = Field(default=["claude-sonnet"], min_length=1, max_length=7)
+    models: list[str] = Field(default=[DEFAULT_MODEL], min_length=1, max_length=7)
     interval_days: int = Field(default=30, ge=1, le=365)
 
 
@@ -32,19 +33,8 @@ async def create_schedule(
     body: CreateScheduleRequest,
     user: User = Depends(get_current_user),
 ):
-    has_key = bool(user.api_keys) or user.encrypted_api_key is not None
-    if not has_key:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please add at least one API key before scheduling analyses.",
-        )
-
-    for mk in body.models:
-        if mk not in MODELS:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown model: {mk}",
-            )
+    validate_models(body.models)
+    validate_provider_keys(user, body.models)
 
     db = get_async_db()
 

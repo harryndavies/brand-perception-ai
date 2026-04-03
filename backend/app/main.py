@@ -1,13 +1,10 @@
 from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
-
-load_dotenv()
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import CORS_ORIGINS
-from app.core.database import init_db  # async — creates MongoDB indexes
+from app.core.config import settings
+from app.core.database import init_db
 from app.core.logging import setup_logging
 from app.middleware import CorrelationMiddleware
 from app.routes import auth, reports, schedules
@@ -28,10 +25,10 @@ app.add_middleware(CorrelationMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(auth.router)

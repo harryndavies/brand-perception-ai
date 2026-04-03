@@ -1,23 +1,24 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from app.tasks import _parse_json, _build_trend
+from app.core.utils import parse_json_response
+from app.tasks import _build_trend
 
 
 def test_parse_json_plain():
-    result = _parse_json('{"key": "value"}')
+    result = parse_json_response('{"key": "value"}')
     assert result == {"key": "value"}
 
 
 def test_parse_json_with_fences():
     raw = '```json\n{"key": "value"}\n```'
-    result = _parse_json(raw)
+    result = parse_json_response(raw)
     assert result == {"key": "value"}
 
 
 def test_parse_json_with_bare_fences():
     raw = '```\n{"key": "value"}\n```'
-    result = _parse_json(raw)
+    result = parse_json_response(raw)
     assert result == {"key": "value"}
 
 

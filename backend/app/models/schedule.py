@@ -3,13 +3,15 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
+from app.core.enums import DEFAULT_MODEL
+
 
 class Schedule(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
     brand: str
-    competitors: list[str] = []
-    models: list[str] = ["claude-sonnet"]
+    competitors: list[str] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=lambda: [DEFAULT_MODEL])
     interval_days: int = 30  # default monthly
     next_run: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     active: bool = True

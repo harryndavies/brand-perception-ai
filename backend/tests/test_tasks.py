@@ -190,6 +190,6 @@ def test_run_analysis_emits_running_then_complete(mock_db, mock_call_model, mock
     from app.tasks import run_analysis
     run_analysis("report-prog", "TestBrand", [], "user-1", ["claude-sonnet"])
 
-    assert "running" in emitted_states
+    assert "processing" in emitted_states
     assert "complete" in emitted_states
-    assert emitted_states.index("running") < emitted_states.index("complete")
+    assert emitted_states.index("processing") < emitted_states.index("complete")

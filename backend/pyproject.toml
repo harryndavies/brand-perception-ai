@@ -11,7 +11,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "motor>=3.6.0",
     "pydantic[email]>=2.12.5",
-    "python-dotenv>=1.2.2",
+    "pydantic-settings>=2.7.0",
     "python-jose[cryptography]>=3.5.0",
     "redis>=5.0.0",
     "uvicorn[standard]>=0.34.0",
@@ -24,9 +24,19 @@ test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.25.0",
 ]
+dev = [
+    "ruff>=0.8.0",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.setuptools]
 packages = ["app"]

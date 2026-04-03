@@ -11,7 +11,7 @@ class User(BaseModel):
     hashed_password: str
     team: str = "Default"
     encrypted_api_key: str | None = None  # deprecated, kept for migration
-    api_keys: dict[str, str] = {}  # provider -> encrypted key
+    api_keys: dict[str, str] = Field(default_factory=dict)  # provider -> encrypted key
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_doc(self) -> dict:

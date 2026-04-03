@@ -5,15 +5,16 @@ Progress is tracked via Redis so the API can stream updates to clients.
 """
 
 import concurrent.futures
-import json
 import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
 
 from app.core.database import get_sync_db
+from app.core.enums import DEFAULT_MODEL, ReportStatus
 from app.core.logging import setup_logging, correlation_id
 from app.core import progress
+from app.core.utils import parse_json_response
 from app.services.providers import call_model, MODELS
 from app.worker import celery_app
 
@@ -21,7 +22,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-# ── Prompt ──────────────────────────────────────────────────────────────────
+# -- Prompt --------------------------------------------------------------------
 
 ANALYSIS_PROMPT = """Analyse the brand "{brand}" with competitors [{competitors}].
 
@@ -101,21 +102,14 @@ Include positioning for "{brand}" and each competitor in competitor_positions.
 Be specific and insightful, not generic. Ground your analysis in real brand perception."""
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-def _parse_json(raw: str) -> dict:
-    text = raw.strip()
-    text = re.sub(r"^```(?:json)?\s*\n?", "", text)
-    text = re.sub(r"\n?```\s*$", "", text)
-    return json.loads(text.strip())
-
+# -- Helpers -------------------------------------------------------------------
 
 def _build_trend(brand: str, avg_sentiment: float, model_keys: list[str]) -> list[dict]:
     """Build trend data from past completed analyses of this brand."""
     db = get_sync_db()
     past = list(
         db.reports.find(
-            {"brand": {"$regex": f"^{re.escape(brand)}$", "$options": "i"}, "status": "complete"},
+            {"brand": {"$regex": f"^{re.escape(brand)}$", "$options": "i"}, "status": ReportStatus.COMPLETE},
             {"sentiment_score": 1, "completed_at": 1, "models": 1, "model": 1},
         )
         .sort("completed_at", 1)
@@ -126,7 +120,7 @@ def _build_trend(brand: str, avg_sentiment: float, model_keys: list[str]) -> lis
     for doc in past:
         if doc.get("sentiment_score") is not None and doc.get("completed_at"):
             # Support both old single-model and new multi-model reports
-            model = doc.get("models", [doc.get("model", "claude-sonnet")])
+            model = doc.get("models", [doc.get("model", DEFAULT_MODEL)])
             if isinstance(model, str):
                 model = [model]
             data.append({
@@ -153,7 +147,7 @@ def _run_single_model(user_id: str, model_key: str, prompt: str, report_id: str)
     result = call_model(user_id, model_key, prompt)
 
     duration_ms = round((time.perf_counter() - start) * 1000, 1)
-    progress.emit(report_id, model_key, "complete", 100)
+    progress.emit(report_id, model_key, ReportStatus.COMPLETE, 100)
 
     logger.info(
         "Model %s completed in %.0fms",
@@ -165,7 +159,7 @@ def _run_single_model(user_id: str, model_key: str, prompt: str, report_id: str)
     return {"model_key": model_key, "label": spec["label"], **result}
 
 
-# ── Main Celery task ─────────────────────────────────────────────────────────
+# -- Main Celery task ----------------------------------------------------------
 
 @celery_app.task(name="app.tasks.run_analysis", bind=True, max_retries=2)
 def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_id: str, model_keys: list[str]):
@@ -191,7 +185,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
 
         # Mark all models as running before fan-out
         for mk in model_keys:
-            progress.emit(report_id, mk, "running", 0)
+            progress.emit(report_id, mk, ReportStatus.PROCESSING, 0)
 
         # Fan out across models in parallel
         results = []
@@ -206,7 +200,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
                 for future in concurrent.futures.as_completed(futures):
                     results.append(future.result())
 
-        # Build model_perceptions — one entry per model
+        # Build model_perceptions -- one entry per model
         model_perceptions = []
         all_scores = {}
         all_pillars = []
@@ -237,19 +231,19 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
                 "key_themes": themes[:5],
             })
 
-            # Scores — average across models
+            # Scores -- average across models
             scores = r.get("scores", {})
             for k, v in scores.items():
                 all_scores.setdefault(k, []).append(v)
 
-            # Pillars — deduplicate by name
+            # Pillars -- deduplicate by name
             for p in r.get("pillars", []):
                 p["sources"] = [label]
                 if p["name"] not in seen_pillars:
                     all_pillars.append(p)
                     seen_pillars.add(p["name"])
 
-            # Competitor positions — take from first result that has them
+            # Competitor positions -- take from first result that has them
             positions = r.get("competitor_analysis", {}).get("competitor_positions", [])
             if positions and not all_competitor_positions:
                 all_competitor_positions = positions
@@ -268,7 +262,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
         db.reports.update_one(
             {"_id": report_id},
             {"$set": {
-                "status": "complete",
+                "status": ReportStatus.COMPLETE,
                 "sentiment_score": avg_sentiment,
                 "scores": averaged_scores,
                 "pillars": all_pillars,
@@ -279,7 +273,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
             }},
         )
 
-        progress.set_status(report_id, "complete")
+        progress.set_status(report_id, ReportStatus.COMPLETE)
 
         task_duration = round((time.perf_counter() - task_start) * 1000, 1)
         logger.info(
@@ -305,10 +299,10 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
         db = get_sync_db()
         db.reports.update_one(
             {"_id": report_id},
-            {"$set": {"status": "failed"}},
+            {"$set": {"status": ReportStatus.FAILED}},
         )
 
-        progress.set_status(report_id, "failed")
+        progress.set_status(report_id, ReportStatus.FAILED)
         progress.publish_event(report_id, "analysis.failed", {
             "report_id": report_id,
             "error": "Analysis failed. Please try again.",
@@ -317,7 +311,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
         raise self.retry(exc=exc, countdown=5)
 
 
-# ── Scheduled analysis ───────────────────────────────────────────────────────
+# -- Scheduled analysis --------------------------------------------------------
 
 @celery_app.task(name="app.tasks.process_schedules")
 def process_schedules():
@@ -343,7 +337,7 @@ def process_schedules():
             "brand": brand,
             "competitors": competitors,
             "models": model_keys,
-            "status": "processing",
+            "status": ReportStatus.PROCESSING,
             "sentiment_score": None,
             "scores": {},
             "pillars": [],

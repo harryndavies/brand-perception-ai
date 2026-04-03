@@ -9,11 +9,11 @@ import hashlib
 
 from cryptography.fernet import Fernet
 
-from app.core.config import ENCRYPTION_KEY
+from app.core.config import settings
 
 # Derive a valid 32-byte Fernet key from ENCRYPTION_KEY via SHA-256.
 # This lets ENCRYPTION_KEY be any string (including a raw Fernet key).
-_fernet_key = base64.urlsafe_b64encode(hashlib.sha256(ENCRYPTION_KEY.encode()).digest())
+_fernet_key = base64.urlsafe_b64encode(hashlib.sha256(settings.encryption_key.encode()).digest())
 _fernet = Fernet(_fernet_key)
 
 

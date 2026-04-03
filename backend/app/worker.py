@@ -1,16 +1,11 @@
-import os
-
 from celery import Celery
-from dotenv import load_dotenv
 
-load_dotenv()
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from app.core.config import settings
 
 celery_app = Celery(
     "perception",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=settings.redis_url,
+    backend=settings.redis_url,
 )
 
 celery_app.conf.update(

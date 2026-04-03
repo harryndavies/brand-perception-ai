@@ -9,7 +9,7 @@ class Schedule(BaseModel):
     user_id: str
     brand: str
     competitors: list[str] = []
-    model: str = "sonnet"
+    models: list[str] = ["claude-sonnet"]
     interval_days: int = 30  # default monthly
     next_run: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     active: bool = True

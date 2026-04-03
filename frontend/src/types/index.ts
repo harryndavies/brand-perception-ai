@@ -36,13 +36,17 @@ export interface BrandScores {
   market_positioning: number;
 }
 
-export type ModelOption = "sonnet" | "haiku" | "opus";
+export interface ModelInfo {
+  key: string;
+  provider: string;
+  label: string;
+}
 
 export interface BrandReport {
   id: string;
   brand: string;
   competitors: string[];
-  model: ModelOption;
+  models: string[];
   status: AnalysisStatus;
   sentiment_score: number | null;
   scores: BrandScores | null;
@@ -67,13 +71,14 @@ export interface User {
   name: string;
   team: string;
   has_api_key: boolean;
+  api_keys: string[];  // provider names with keys saved
 }
 
 export interface Schedule {
   id: string;
   brand: string;
   competitors: string[];
-  model: ModelOption;
+  models: string[];
   interval_days: number;
   next_run: string;
   active: boolean;

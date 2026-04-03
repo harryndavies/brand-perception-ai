@@ -1,5 +1,3 @@
-from typing import Literal
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -10,22 +8,16 @@ from app.core.progress import _get_redis, init as init_progress
 from app.models.report import Report
 from app.models.user import User
 from app.services.analysis import stream_progress
+from app.services.providers import MODELS
 from app.tasks import run_analysis
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
-ALLOWED_MODELS = {
-    "sonnet": "claude-sonnet-4-20250514",
-    "haiku": "claude-haiku-4-5-20251001",
-    "opus": "claude-opus-4-20250514",
-}
-
-
 class CreateReportRequest(BaseModel):
     brand: str = Field(..., min_length=1, max_length=100)
     competitors: list[str] = Field(default=[], max_length=3)
-    model: Literal["sonnet", "haiku", "opus"] = "sonnet"
+    models: list[str] = Field(default=["claude-sonnet"], min_length=1, max_length=7)
 
 
 @router.get("")
@@ -34,6 +26,13 @@ async def list_reports(user: User = Depends(get_current_user)):
     cursor = db.reports.find({"user_id": user.id}).sort("created_at", -1)
     docs = await cursor.to_list(length=100)
     return [Report.from_doc(doc).model_dump() for doc in docs]
+
+
+@router.get("/models")
+async def list_models():
+    """Return available models for the frontend."""
+    from app.services.providers import get_available_models
+    return get_available_models()
 
 
 @router.get("/{report_id}")
@@ -66,37 +65,56 @@ async def create_report(
             detail="Rate limit exceeded. Try again shortly.",
         )
 
-    if not user.encrypted_api_key:
+    # Check user has at least one API key
+    has_key = bool(user.api_keys) or user.encrypted_api_key is not None
+    if not has_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please add your Anthropic API key before running an analysis.",
+            detail="Please add at least one API key before running an analysis.",
+        )
+
+    # Validate all requested models exist
+    for mk in body.models:
+        if mk not in MODELS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown model: {mk}",
+            )
+
+    # Check user has keys for all required providers
+    required_providers = {MODELS[mk]["provider"] for mk in body.models}
+    available_providers = set(user.api_keys.keys())
+    if user.encrypted_api_key:
+        available_providers.add("anthropic")
+    missing = required_providers - available_providers
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing API keys for: {', '.join(missing)}. Add them in settings.",
         )
 
     db = get_async_db()
-
-    model_id = ALLOWED_MODELS[body.model]
 
     report = Report(
         user_id=user.id,
         brand=body.brand,
         competitors=body.competitors,
-        model=body.model,
+        models=body.models,
         status="processing",
     )
     await db.reports.insert_one(report.to_doc())
 
-    # Seed Redis so SSE stream has data before the worker picks up the task
-    init_progress(report.id, ["analysis"])
+    # Seed Redis with one progress entry per model
+    init_progress(report.id, body.models)
 
-    # Dispatch analysis to Celery worker via Redis broker
-    run_analysis.delay(report.id, report.brand, report.competitors, user.id, model_id)
+    # Dispatch analysis to Celery worker
+    run_analysis.delay(report.id, report.brand, report.competitors, user.id, body.models)
 
     return report.model_dump()
 
 
 @router.get("/{report_id}/stream")
 async def stream_report(report_id: str, token: str):
-    # SSE can't send auth headers, so we accept token as query param
     from jose import JWTError, jwt as jose_jwt
     from app.core.config import SECRET_KEY, ALGORITHM
 

@@ -4,31 +4,21 @@ These run in the Celery worker process, separate from the FastAPI server.
 Progress is tracked via Redis so the API can stream updates to clients.
 """
 
+import concurrent.futures
 import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
-
-import anthropic
+from datetime import datetime, timedelta, timezone
 
 from app.core.database import get_sync_db
 from app.core.logging import setup_logging, correlation_id
 from app.core import progress
+from app.services.providers import call_model, MODELS
 from app.worker import celery_app
 
 setup_logging()
 logger = logging.getLogger(__name__)
-
-def _get_client(user_id: str) -> anthropic.Anthropic:
-    """Return an Anthropic client using the user's encrypted API key."""
-    from app.core.encryption import decrypt
-
-    db = get_sync_db()
-    doc = db.users.find_one({"_id": user_id}, {"encrypted_api_key": 1})
-    if not doc or not doc.get("encrypted_api_key"):
-        raise RuntimeError("No API key found for user")
-    return anthropic.Anthropic(api_key=decrypt(doc["encrypted_api_key"]))
 
 
 # ── Prompt ──────────────────────────────────────────────────────────────────
@@ -101,7 +91,7 @@ Return a single JSON object with exactly this structure. Do not include any text
       "name": "Pillar Name",
       "description": "1-2 sentence description of this brand pillar",
       "confidence": <float between 0.0 and 1.0>,
-      "sources": ["Claude"]
+      "sources": ["source"]
     }}
   ]
 }}
@@ -120,13 +110,13 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text.strip())
 
 
-def _build_trend(brand: str, current_sentiment: float, current_model: str = "sonnet") -> list[dict]:
+def _build_trend(brand: str, avg_sentiment: float, model_keys: list[str]) -> list[dict]:
     """Build trend data from past completed analyses of this brand."""
     db = get_sync_db()
     past = list(
         db.reports.find(
             {"brand": {"$regex": f"^{re.escape(brand)}$", "$options": "i"}, "status": "complete"},
-            {"sentiment_score": 1, "completed_at": 1, "model": 1},
+            {"sentiment_score": 1, "completed_at": 1, "models": 1, "model": 1},
         )
         .sort("completed_at", 1)
         .limit(50)
@@ -135,26 +125,52 @@ def _build_trend(brand: str, current_sentiment: float, current_model: str = "son
     data = []
     for doc in past:
         if doc.get("sentiment_score") is not None and doc.get("completed_at"):
+            # Support both old single-model and new multi-model reports
+            model = doc.get("models", [doc.get("model", "claude-sonnet")])
+            if isinstance(model, str):
+                model = [model]
             data.append({
                 "date": doc["completed_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "sentiment": doc["sentiment_score"],
-                "model": doc.get("model", "sonnet"),
+                "model": ", ".join(model),
             })
 
+    # Current analysis
     data.append({
         "date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "sentiment": current_sentiment,
-        "model": current_model,
+        "sentiment": avg_sentiment,
+        "model": ", ".join(model_keys),
     })
 
     return data
 
 
+def _run_single_model(user_id: str, model_key: str, prompt: str, report_id: str) -> dict:
+    """Call one model and emit progress updates."""
+    progress.emit(report_id, model_key, "running", 0)
+    start = time.perf_counter()
+
+    spec = MODELS[model_key]
+    result = call_model(user_id, model_key, prompt)
+
+    duration_ms = round((time.perf_counter() - start) * 1000, 1)
+    progress.emit(report_id, model_key, "complete", 100)
+
+    logger.info(
+        "Model %s completed in %.0fms",
+        spec["label"],
+        duration_ms,
+        extra={"report_id": report_id, "model": model_key, "duration_ms": duration_ms},
+    )
+
+    return {"model_key": model_key, "label": spec["label"], **result}
+
+
 # ── Main Celery task ─────────────────────────────────────────────────────────
 
 @celery_app.task(name="app.tasks.run_analysis", bind=True, max_retries=2)
-def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_id: str | None = None, model_id: str = "claude-sonnet-4-20250514"):
-    """Run a single Claude call to analyse a brand.
+def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_id: str, model_keys: list[str]):
+    """Run analysis across one or more AI models in parallel.
 
     Runs as a Celery task in a worker process. Progress is published to
     Redis so the API server can stream SSE updates to the client.
@@ -164,65 +180,97 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
 
     task_start = time.perf_counter()
     logger.info(
-        "Starting analysis for %s",
+        "Starting analysis for %s with models %s",
         brand,
-        extra={"report_id": report_id, "brand": brand, "task_name": "run_analysis"},
+        model_keys,
+        extra={"report_id": report_id, "brand": brand, "models": model_keys},
     )
-    progress.emit(report_id, "analysis", "running", 0)
 
     try:
         competitor_str = ", ".join(competitors) if competitors else "general market"
         prompt = ANALYSIS_PROMPT.format(brand=brand, competitors=competitor_str)
 
-        client = _get_client(user_id)
-        message = client.messages.create(
-            model=model_id,
-            max_tokens=2048,
-            temperature=0,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        result = _parse_json(message.content[0].text)
+        # Fan out across models in parallel
+        results = []
+        if len(model_keys) == 1:
+            results.append(_run_single_model(user_id, model_keys[0], prompt, report_id))
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(model_keys)) as pool:
+                futures = {
+                    pool.submit(_run_single_model, user_id, mk, prompt, report_id): mk
+                    for mk in model_keys
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    results.append(future.result())
 
-        # Build model_perceptions from the three sections
-        sections = [
-            ("Brand Perception", result["brand_perception"]),
-            ("News Sentiment", result["news_sentiment"]),
-            ("Competitor Analysis", result["competitor_analysis"]),
-        ]
-        model_perceptions = [
-            {
+        # Build model_perceptions — one entry per model
+        model_perceptions = []
+        all_scores = {}
+        all_pillars = []
+        all_competitor_positions = []
+        seen_pillars: set[str] = set()
+
+        for r in results:
+            label = r["label"]
+
+            # Sections
+            sections = [
+                ("Brand Perception", r.get("brand_perception", {})),
+                ("News Sentiment", r.get("news_sentiment", {})),
+                ("Competitor Analysis", r.get("competitor_analysis", {})),
+            ]
+
+            sentiments = [s.get("sentiment", 0) for _, s in sections]
+            avg = round(sum(sentiments) / len(sentiments), 2) if sentiments else 0
+
+            themes = []
+            for _, section in sections:
+                themes.extend(section.get("key_themes", []))
+
+            model_perceptions.append({
                 "model": label,
-                "summary": section["summary"],
-                "sentiment": section["sentiment"],
-                "key_themes": section["key_themes"],
-            }
-            for label, section in sections
-        ]
+                "summary": r.get("brand_perception", {}).get("summary", ""),
+                "sentiment": avg,
+                "key_themes": themes[:5],
+            })
 
-        scores = result.get("scores", {})
-        pillars = result.get("pillars", [])
-        competitor_positions = result.get("competitor_analysis", {}).get("competitor_positions", [])
+            # Scores — average across models
+            scores = r.get("scores", {})
+            for k, v in scores.items():
+                all_scores.setdefault(k, []).append(v)
 
-        sentiments = [s["sentiment"] for _, s in sections]
-        avg_sentiment = round(sum(sentiments) / len(sentiments), 2)
+            # Pillars — deduplicate by name
+            for p in r.get("pillars", []):
+                p["sources"] = [label]
+                if p["name"] not in seen_pillars:
+                    all_pillars.append(p)
+                    seen_pillars.add(p["name"])
 
+            # Competitor positions — take from first result that has them
+            positions = r.get("competitor_analysis", {}).get("competitor_positions", [])
+            if positions and not all_competitor_positions:
+                all_competitor_positions = positions
+
+        # Average scores across models
+        averaged_scores = {k: round(sum(v) / len(v)) for k, v in all_scores.items()}
+
+        # Overall sentiment
+        all_sentiments = [mp["sentiment"] for mp in model_perceptions]
+        avg_sentiment = round(sum(all_sentiments) / len(all_sentiments), 2)
+
+        trend_data = _build_trend(brand, avg_sentiment, model_keys)
+
+        # Persist to database
         db = get_sync_db()
-
-        # Read the model key stored on the report
-        report_doc = db.reports.find_one({"_id": report_id}, {"model": 1})
-        model_key = report_doc.get("model", "sonnet") if report_doc else "sonnet"
-        trend_data = _build_trend(brand, avg_sentiment, model_key)
-
-        progress.emit(report_id, "analysis", "complete", 100)
         db.reports.update_one(
             {"_id": report_id},
             {"$set": {
                 "status": "complete",
                 "sentiment_score": avg_sentiment,
-                "scores": scores,
-                "pillars": pillars,
+                "scores": averaged_scores,
+                "pillars": all_pillars,
                 "model_perceptions": model_perceptions,
-                "competitor_positions": competitor_positions,
+                "competitor_positions": all_competitor_positions,
                 "trend_data": trend_data,
                 "completed_at": datetime.now(timezone.utc),
             }},
@@ -232,14 +280,14 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
 
         task_duration = round((time.perf_counter() - task_start) * 1000, 1)
         logger.info(
-            "Analysis complete for %s (%.0fms, sentiment=%.2f)",
+            "Analysis complete for %s (%.0fms, sentiment=%.2f, models=%s)",
             brand,
             task_duration,
             avg_sentiment,
+            model_keys,
             extra={
                 "report_id": report_id,
                 "brand": brand,
-                "task_name": "run_analysis",
                 "duration_ms": task_duration,
             },
         )
@@ -277,26 +325,21 @@ def process_schedules():
     db = get_sync_db()
     now = datetime.now(timezone.utc)
 
-    # Import model mapping from reports route
-    from app.routes.reports import ALLOWED_MODELS
-
     due = list(db.schedules.find({"active": True, "next_run": {"$lte": now}}))
     for schedule in due:
         user_id = schedule["user_id"]
         brand = schedule["brand"]
         competitors = schedule.get("competitors", [])
         interval_days = schedule.get("interval_days", 30)
-        model_key = schedule.get("model", "sonnet")
-        model_id = ALLOWED_MODELS.get(model_key, ALLOWED_MODELS["sonnet"])
+        model_keys = schedule["models"]
 
-        # Create a report
         report_id = str(uuid.uuid4())
         db.reports.insert_one({
             "_id": report_id,
             "user_id": user_id,
             "brand": brand,
             "competitors": competitors,
-            "model": model_key,
+            "models": model_keys,
             "status": "processing",
             "sentiment_score": None,
             "scores": {},
@@ -308,11 +351,9 @@ def process_schedules():
             "completed_at": None,
         })
 
-        init_progress(report_id, ["analysis"])
-        run_analysis.delay(report_id, brand, competitors, user_id, model_id)
+        init_progress(report_id, model_keys)
+        run_analysis.delay(report_id, brand, competitors, user_id, model_keys)
 
-        # Advance next_run
-        from datetime import timedelta
         db.schedules.update_one(
             {"_id": schedule["_id"]},
             {"$set": {"next_run": now + timedelta(days=interval_days)}},

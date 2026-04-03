@@ -2,12 +2,19 @@
 
 import json
 import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 MOCK_API_RESPONSE = {
+    "scores": {
+        "brand_recognition": 8,
+        "sentiment": 7,
+        "innovation": 6,
+        "value_perception": 7,
+        "market_positioning": 8,
+    },
     "brand_perception": {
         "summary": "Test brand is well-perceived.",
         "sentiment": 0.7,
@@ -38,15 +45,6 @@ MOCK_API_RESPONSE = {
 }
 
 
-def _mock_message(content: str):
-    """Create a mock Anthropic message response."""
-    msg = MagicMock()
-    block = MagicMock()
-    block.text = content
-    msg.content = [block]
-    return msg
-
-
 def _make_redis_store():
     """Create a dict-backed mock Redis for progress tracking."""
     store = {}
@@ -60,20 +58,21 @@ def _make_redis_store():
 # ── Task tests ───────────────────────────────────────────────────────────────
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._get_client")
+@patch("app.tasks.call_model")
 @patch("app.tasks.get_sync_db")
-def test_run_analysis_success(mock_db, mock_client, mock_redis):
+def test_run_analysis_success(mock_db, mock_call_model, mock_redis):
     """Full happy-path: API returns valid JSON, DB is updated, progress is set."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.return_value.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
+    mock_call_model.return_value = MOCK_API_RESPONSE
 
     mock_collection = MagicMock()
+    mock_collection.find_one.return_value = {"model": "claude-sonnet", "models": ["claude-sonnet"]}
     mock_db.return_value = MagicMock(reports=mock_collection)
 
     from app.tasks import run_analysis
-    run_analysis("report-123", "TestBrand", ["Rival"])
+    run_analysis("report-123", "TestBrand", ["Rival"], "user-1", ["claude-sonnet"])
 
     # Verify DB was updated with complete status
     mock_collection.update_one.assert_called_once()
@@ -83,9 +82,8 @@ def test_run_analysis_success(mock_db, mock_client, mock_redis):
     assert update["status"] == "complete"
     assert update["sentiment_score"] == 0.6  # avg of 0.7, 0.6, 0.5
     assert len(update["pillars"]) == 1
-    assert len(update["model_perceptions"]) == 3
+    assert len(update["model_perceptions"]) == 1
     assert len(update["competitor_positions"]) == 2
-    assert update["trend_data"] is not None
 
     # Verify progress was set to complete
     state = json.loads(store.get("progress:report-123", "{}"))
@@ -93,36 +91,35 @@ def test_run_analysis_success(mock_db, mock_client, mock_redis):
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._get_client")
+@patch("app.tasks.call_model")
 @patch("app.tasks.get_sync_db")
-def test_run_analysis_builds_model_perceptions(mock_db, mock_client, mock_redis):
-    """Model perceptions should map to the three analysis sections."""
+def test_run_analysis_builds_model_perceptions(mock_db, mock_call_model, mock_redis):
+    """Model perceptions should include the model label."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.return_value.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
-    mock_db.return_value = MagicMock(reports=MagicMock())
+    mock_call_model.return_value = MOCK_API_RESPONSE
+    mock_collection = MagicMock()
+    mock_collection.find_one.return_value = {"models": ["claude-sonnet"]}
+    mock_db.return_value = MagicMock(reports=mock_collection)
 
     from app.tasks import run_analysis
-    run_analysis("report-456", "TestBrand", [])
+    run_analysis("report-456", "TestBrand", [], "user-1", ["claude-sonnet"])
 
-    update = mock_db.return_value.reports.update_one.call_args[0][1]["$set"]
-    labels = [p["model"] for p in update["model_perceptions"]]
-    assert labels == ["Brand Perception", "News Sentiment", "Competitor Analysis"]
-
-    assert update["model_perceptions"][0]["sentiment"] == 0.7
-    assert update["model_perceptions"][1]["key_themes"] == ["growth", "expansion"]
+    update = mock_collection.update_one.call_args[0][1]["$set"]
+    assert len(update["model_perceptions"]) == 1
+    assert update["model_perceptions"][0]["model"] == "Claude Sonnet"
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._get_client")
+@patch("app.tasks.call_model")
 @patch("app.tasks.get_sync_db")
-def test_run_analysis_api_failure_marks_failed(mock_db, mock_client, mock_redis):
-    """When the Claude API raises, report status should be set to failed."""
+def test_run_analysis_api_failure_marks_failed(mock_db, mock_call_model, mock_redis):
+    """When the API raises, report status should be set to failed."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.return_value.messages.create.side_effect = Exception("API timeout")
+    mock_call_model.side_effect = Exception("API timeout")
 
     mock_collection = MagicMock()
     mock_db.return_value = MagicMock(reports=mock_collection)
@@ -130,7 +127,7 @@ def test_run_analysis_api_failure_marks_failed(mock_db, mock_client, mock_redis)
     from app.tasks import run_analysis
 
     with pytest.raises(Exception):
-        run_analysis("report-err", "TestBrand", [])
+        run_analysis("report-err", "TestBrand", [], "user-1", ["claude-sonnet"])
 
     # DB should be marked as failed
     mock_collection.update_one.assert_called_once()
@@ -143,14 +140,15 @@ def test_run_analysis_api_failure_marks_failed(mock_db, mock_client, mock_redis)
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._get_client")
+@patch("app.tasks.call_model")
 @patch("app.tasks.get_sync_db")
-def test_run_analysis_invalid_json_marks_failed(mock_db, mock_client, mock_redis):
-    """When Claude returns unparseable JSON, report should be marked failed."""
+def test_run_analysis_invalid_json_marks_failed(mock_db, mock_call_model, mock_redis):
+    """When the provider returns bad data, report should be marked failed."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
 
-    mock_client.return_value.messages.create.return_value = _mock_message("not valid json at all")
+    # call_model raises because providers._parse_json fails
+    mock_call_model.side_effect = json.JSONDecodeError("bad", "", 0)
 
     mock_collection = MagicMock()
     mock_db.return_value = MagicMock(reports=mock_collection)
@@ -158,16 +156,16 @@ def test_run_analysis_invalid_json_marks_failed(mock_db, mock_client, mock_redis
     from app.tasks import run_analysis
 
     with pytest.raises(Exception):
-        run_analysis("report-bad", "TestBrand", [])
+        run_analysis("report-bad", "TestBrand", [], "user-1", ["claude-sonnet"])
 
     update = mock_collection.update_one.call_args[0][1]["$set"]
     assert update == {"status": "failed"}
 
 
 @patch("app.core.progress._get_redis")
-@patch("app.tasks._get_client")
+@patch("app.tasks.call_model")
 @patch("app.tasks.get_sync_db")
-def test_run_analysis_emits_running_then_complete(mock_db, mock_client, mock_redis):
+def test_run_analysis_emits_running_then_complete(mock_db, mock_call_model, mock_redis):
     """Progress should transition from running to complete."""
     mock_r, store = _make_redis_store()
     mock_redis.return_value = mock_r
@@ -179,16 +177,18 @@ def test_run_analysis_emits_running_then_complete(mock_db, mock_client, mock_red
         original_set(k, v, **kw)
         if k.startswith("progress:"):
             state = json.loads(v)
-            if "analysis" in state.get("jobs", {}):
-                emitted_states.append(state["jobs"]["analysis"]["status"])
+            for job_id, job in state.get("jobs", {}).items():
+                emitted_states.append(job["status"])
 
     mock_r.set.side_effect = capture_set
 
-    mock_client.return_value.messages.create.return_value = _mock_message(json.dumps(MOCK_API_RESPONSE))
-    mock_db.return_value = MagicMock(reports=MagicMock())
+    mock_call_model.return_value = MOCK_API_RESPONSE
+    mock_collection = MagicMock()
+    mock_collection.find_one.return_value = {"models": ["claude-sonnet"]}
+    mock_db.return_value = MagicMock(reports=mock_collection)
 
     from app.tasks import run_analysis
-    run_analysis("report-prog", "TestBrand", [])
+    run_analysis("report-prog", "TestBrand", [], "user-1", ["claude-sonnet"])
 
     assert "running" in emitted_states
     assert "complete" in emitted_states

@@ -31,7 +31,7 @@ def test_build_trend_first_analysis(mock_db):
     mock_collection.find.return_value = mock_cursor
     mock_db.return_value = MagicMock(reports=mock_collection)
 
-    data = _build_trend("TestBrand", 0.75, ["claude-sonnet"])
+    data = _build_trend("TestBrand", 0.75)
     assert len(data) == 1
     assert data[0]["sentiment"] == 0.75
 
@@ -42,8 +42,8 @@ def test_build_trend_with_history(mock_db):
     from datetime import datetime, timezone
 
     past_docs = [
-        {"sentiment_score": 0.5, "completed_at": datetime(2026, 1, 1, tzinfo=timezone.utc), "models": ["claude-sonnet"]},
-        {"sentiment_score": 0.6, "completed_at": datetime(2026, 2, 1, tzinfo=timezone.utc), "models": ["claude-sonnet"]},
+        {"sentiment_score": 0.5, "completed_at": datetime(2026, 1, 1, tzinfo=timezone.utc)},
+        {"sentiment_score": 0.6, "completed_at": datetime(2026, 2, 1, tzinfo=timezone.utc)},
     ]
     mock_collection = MagicMock()
     mock_cursor = MagicMock()
@@ -52,7 +52,7 @@ def test_build_trend_with_history(mock_db):
     mock_collection.find.return_value = mock_cursor
     mock_db.return_value = MagicMock(reports=mock_collection)
 
-    data = _build_trend("TestBrand", 0.7, ["claude-sonnet"])
+    data = _build_trend("TestBrand", 0.7)
     assert len(data) == 3
     assert data[0]["sentiment"] == 0.5
     assert data[1]["sentiment"] == 0.6

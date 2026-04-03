@@ -1,5 +1,5 @@
 import { useAuthStore } from "@/stores/auth";
-import type { BrandReport, User, Schedule, ModelOption } from "@/types";
+import type { BrandReport, User, Schedule, ModelInfo } from "@/types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -39,23 +39,24 @@ export const api = {
         body: JSON.stringify({ name, email, password }),
       }),
     me: () => request<User>("/auth/me"),
-    setApiKey: (api_key: string) =>
-      request<{ has_api_key: boolean }>("/auth/api-key", {
+    setApiKey: (provider: string, api_key: string) =>
+      request<{ provider: string; saved: boolean }>("/auth/api-key", {
         method: "PUT",
-        body: JSON.stringify({ api_key }),
+        body: JSON.stringify({ provider, api_key }),
       }),
-    deleteApiKey: () =>
-      request<{ has_api_key: boolean }>("/auth/api-key", {
+    deleteApiKey: (provider: string) =>
+      request<{ provider: string; removed: boolean }>(`/auth/api-key/${provider}`, {
         method: "DELETE",
       }),
   },
   reports: {
     list: () => request<BrandReport[]>("/reports"),
     get: (id: string) => request<BrandReport>(`/reports/${id}`),
-    create: (brand: string, competitors: string[], model: ModelOption = "sonnet") =>
+    models: () => request<ModelInfo[]>("/reports/models"),
+    create: (brand: string, competitors: string[], models: string[]) =>
       request<BrandReport>("/reports", {
         method: "POST",
-        body: JSON.stringify({ brand, competitors, model }),
+        body: JSON.stringify({ brand, competitors, models }),
       }),
     stream: (id: string): EventSource => {
       const token = useAuthStore.getState().token;
@@ -65,10 +66,10 @@ export const api = {
   },
   schedules: {
     list: () => request<Schedule[]>("/schedules"),
-    create: (brand: string, competitors: string[], model: ModelOption, interval_days: number) =>
+    create: (brand: string, competitors: string[], models: string[], interval_days: number) =>
       request<Schedule>("/schedules", {
         method: "POST",
-        body: JSON.stringify({ brand, competitors, model, interval_days }),
+        body: JSON.stringify({ brand, competitors, models, interval_days }),
       }),
     remove: (id: string) =>
       request<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),

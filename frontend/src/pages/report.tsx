@@ -38,9 +38,9 @@ function ReportContent({ report }: { report: BrandReport }) {
               {report.brand}
             </h1>
             <Badge>Complete</Badge>
-            {report.model && (
-              <Badge variant="outline">{report.model}</Badge>
-            )}
+            {report.models?.map((m) => (
+              <Badge key={m} variant="outline">{m}</Badge>
+            ))}
           </div>
           <p className="mt-1 text-muted-foreground">
             Analysis completed{" "}

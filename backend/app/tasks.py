@@ -120,13 +120,13 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text.strip())
 
 
-def _build_trend(brand: str, current_sentiment: float) -> list[dict]:
+def _build_trend(brand: str, current_sentiment: float, current_model: str = "sonnet") -> list[dict]:
     """Build trend data from past completed analyses of this brand."""
     db = get_sync_db()
     past = list(
         db.reports.find(
             {"brand": {"$regex": f"^{re.escape(brand)}$", "$options": "i"}, "status": "complete"},
-            {"sentiment_score": 1, "completed_at": 1},
+            {"sentiment_score": 1, "completed_at": 1, "model": 1},
         )
         .sort("completed_at", 1)
         .limit(50)
@@ -138,14 +138,13 @@ def _build_trend(brand: str, current_sentiment: float) -> list[dict]:
             data.append({
                 "date": doc["completed_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "sentiment": doc["sentiment_score"],
-                "volume": 1,
+                "model": doc.get("model", "sonnet"),
             })
 
-    # Always include the current analysis as the latest point
     data.append({
         "date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "sentiment": current_sentiment,
-        "volume": 1,
+        "model": current_model,
     })
 
     return data
@@ -206,12 +205,15 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
 
         sentiments = [s["sentiment"] for _, s in sections]
         avg_sentiment = round(sum(sentiments) / len(sentiments), 2)
-        trend_data = _build_trend(brand, avg_sentiment)
+
+        db = get_sync_db()
+
+        # Read the model key stored on the report
+        report_doc = db.reports.find_one({"_id": report_id}, {"model": 1})
+        model_key = report_doc.get("model", "sonnet") if report_doc else "sonnet"
+        trend_data = _build_trend(brand, avg_sentiment, model_key)
 
         progress.emit(report_id, "analysis", "complete", 100)
-
-        # Persist to database
-        db = get_sync_db()
         db.reports.update_one(
             {"_id": report_id},
             {"$set": {

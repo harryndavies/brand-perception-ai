@@ -25,7 +25,7 @@ export interface CompetitorPosition {
 export interface TrendPoint {
   date: string;
   sentiment: number;
-  volume: number;
+  model: string;
 }
 
 export interface BrandScores {

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ApiKeyDialog } from "@/components/api-key-dialog";
+import { Logo } from "@/components/logo";
 import { useAuthStore } from "@/stores/auth";
 import { cn } from "@/lib/utils";
 
@@ -49,24 +50,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         collapsed ? "w-16" : "w-56"
       )}
     >
-      <div className="flex h-14 items-center gap-2 px-4">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="h-5 w-5 shrink-0 text-indigo-500"
-        >
-          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-        {!collapsed && (
-          <span className="text-sm font-semibold tracking-tight">
-            Perception AI
-          </span>
+      <div className="flex h-14 items-center px-4">
+        {!collapsed ? (
+          <Logo className="text-sm" />
+        ) : (
+          <span className="text-sm font-semibold">P<sup className="text-[0.6em]">AI</sup></span>
         )}
       </div>
 

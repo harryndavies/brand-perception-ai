@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   ScatterChart,
   Scatter,
@@ -10,6 +11,7 @@ import {
   Cell,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CHART_COLORS, CHART_COLOR_DEFAULT } from "@/lib/chart";
 import type { CompetitorPosition } from "@/types";
 
 interface CompetitorChartProps {
@@ -17,19 +19,18 @@ interface CompetitorChartProps {
   primaryBrand: string;
 }
 
-const COLORS = [
-  "var(--color-primary)",
-  "#6366f1",
-  "#8b5cf6",
-  "#a78bfa",
+const COMPETITOR_PALETTE = [
+  CHART_COLOR_DEFAULT,
+  CHART_COLORS.opus ?? "#a855f7",
+  CHART_COLORS.haiku ?? "#f59e0b",
+  CHART_COLORS["gpt-4o"] ?? "#10b981",
 ];
 
 export function CompetitorChart({ positions, primaryBrand }: CompetitorChartProps) {
-  const data = positions.map((p) => ({
-    ...p,
-    x: p.lifestyle_score,
-    y: p.premium_score,
-  }));
+  const data = useMemo(
+    () => positions.map((p) => ({ ...p, x: p.lifestyle_score, y: p.premium_score })),
+    [positions],
+  );
 
   return (
     <Card>
@@ -87,33 +88,39 @@ export function CompetitorChart({ positions, primaryBrand }: CompetitorChartProp
                 );
               }}
             />
-            <Scatter data={data} fill="#6366f1">
-              {data.map((entry, index) => (
-                <Cell
-                  key={entry.brand}
-                  fill={entry.brand === primaryBrand ? "#6366f1" : COLORS[index % COLORS.length]}
-                  r={entry.brand === primaryBrand ? 8 : 6}
-                  stroke={entry.brand === primaryBrand ? "#4f46e5" : "none"}
-                  strokeWidth={2}
-                />
-              ))}
+            <Scatter data={data} fill={CHART_COLOR_DEFAULT}>
+              {data.map((entry, index) => {
+                const isPrimary = entry.brand === primaryBrand;
+                return (
+                  <Cell
+                    key={entry.brand}
+                    fill={isPrimary ? CHART_COLOR_DEFAULT : COMPETITOR_PALETTE[index % COMPETITOR_PALETTE.length]}
+                    r={isPrimary ? 8 : 6}
+                    stroke={isPrimary ? CHART_COLORS.opus ?? "#4f46e5" : "none"}
+                    strokeWidth={2}
+                  />
+                );
+              })}
             </Scatter>
           </ScatterChart>
         </ResponsiveContainer>
         <div className="mt-2 flex flex-wrap justify-center gap-4">
-          {positions.map((p, i) => (
-            <div key={p.brand} className="flex items-center gap-1.5 text-xs">
-              <div
-                className="h-2.5 w-2.5 rounded-full"
-                style={{
-                  backgroundColor: p.brand === primaryBrand ? "#6366f1" : COLORS[i % COLORS.length],
-                }}
-              />
-              <span className={p.brand === primaryBrand ? "font-medium" : "text-muted-foreground"}>
-                {p.brand}
-              </span>
-            </div>
-          ))}
+          {positions.map((p, i) => {
+            const isPrimary = p.brand === primaryBrand;
+            return (
+              <div key={p.brand} className="flex items-center gap-1.5 text-xs">
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor: isPrimary ? CHART_COLOR_DEFAULT : COMPETITOR_PALETTE[i % COMPETITOR_PALETTE.length],
+                  }}
+                />
+                <span className={isPrimary ? "font-medium" : "text-muted-foreground"}>
+                  {p.brand}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>

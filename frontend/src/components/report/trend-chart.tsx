@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -9,25 +10,36 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CHART_COLORS, CHART_COLOR_DEFAULT, MODEL_LABELS } from "@/lib/chart";
+import { formatSentiment, formatDateShort, formatDateLong } from "@/lib/format";
 import type { TrendPoint } from "@/types";
 
 interface TrendChartProps {
   data: TrendPoint[];
 }
 
-const MODEL_COLORS: Record<string, string> = {
-  sonnet: "#6366f1",
-  haiku: "#f59e0b",
-  opus: "#a855f7",
-};
-
-const MODEL_LABELS: Record<string, string> = {
-  sonnet: "Sonnet",
-  haiku: "Haiku",
-  opus: "Opus",
-};
-
 export function TrendChart({ data }: TrendChartProps) {
+  const { models, chartData } = useMemo(() => {
+    const uniqueModels = [...new Set(data.map((d) => d.model || "sonnet"))];
+
+    const dateMap = new Map<string, Record<string, number | null>>();
+    for (const point of data) {
+      const model = point.model || "sonnet";
+      const existing = dateMap.get(point.date) ?? {};
+      existing[model] = point.sentiment;
+      dateMap.set(point.date, existing);
+    }
+
+    const sorted = [...dateMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, values]) => ({
+        date,
+        ...Object.fromEntries(uniqueModels.map((m) => [m, values[m] ?? null])),
+      }));
+
+    return { models: uniqueModels, chartData: sorted };
+  }, [data]);
+
   if (data.length < 1) {
     return (
       <Card>
@@ -45,25 +57,6 @@ export function TrendChart({ data }: TrendChartProps) {
     );
   }
 
-  // Find all unique models in the data
-  const models = [...new Set(data.map((d) => d.model || "sonnet"))];
-
-  // Transform data: each row has a date and a sentiment value per model
-  const dateMap = new Map<string, Record<string, number | null>>();
-  for (const point of data) {
-    const model = point.model || "sonnet";
-    const existing = dateMap.get(point.date) ?? {};
-    existing[model] = point.sentiment;
-    dateMap.set(point.date, existing);
-  }
-
-  const chartData = [...dateMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, values]) => ({
-      date,
-      ...Object.fromEntries(models.map((m) => [m, values[m] ?? null])),
-    }));
-
   return (
     <Card>
       <CardHeader>
@@ -79,12 +72,7 @@ export function TrendChart({ data }: TrendChartProps) {
               dataKey="date"
               className="text-xs"
               stroke="hsl(var(--muted-foreground))"
-              tickFormatter={(d: string) =>
-                new Date(d).toLocaleDateString("en-GB", {
-                  month: "short",
-                  day: "numeric",
-                })
-              }
+              tickFormatter={formatDateShort}
             />
             <YAxis
               domain={[-1, 1]}
@@ -98,17 +86,12 @@ export function TrendChart({ data }: TrendChartProps) {
                 return (
                   <div className="rounded-md border bg-background px-3 py-2 text-sm shadow-md">
                     <p className="text-muted-foreground">
-                      {new Date(label as string).toLocaleDateString("en-GB", {
-                        month: "long",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+                      {formatDateLong(label as string)}
                     </p>
                     {payload.map((entry) => (
                       <p key={entry.dataKey as string} style={{ color: entry.color }} className="font-medium">
                         {MODEL_LABELS[entry.dataKey as string] ?? entry.dataKey as string}:{" "}
-                        {Number(entry.value) > 0 ? "+" : ""}
-                        {Number(entry.value).toFixed(2)}
+                        {formatSentiment(Number(entry.value))}
                       </p>
                     ))}
                   </div>
@@ -120,19 +103,22 @@ export function TrendChart({ data }: TrendChartProps) {
                 formatter={(value: string) => MODEL_LABELS[value] ?? value}
               />
             )}
-            {models.map((model) => (
-              <Line
-                key={model}
-                type="monotone"
-                dataKey={model}
-                name={model}
-                stroke={MODEL_COLORS[model] ?? "#6366f1"}
-                strokeWidth={2}
-                dot={{ fill: MODEL_COLORS[model] ?? "#6366f1", r: 3 }}
-                activeDot={{ r: 5, strokeWidth: 2 }}
-                connectNulls
-              />
-            ))}
+            {models.map((model) => {
+              const color = CHART_COLORS[model] ?? CHART_COLOR_DEFAULT;
+              return (
+                <Line
+                  key={model}
+                  type="monotone"
+                  dataKey={model}
+                  name={model}
+                  stroke={color}
+                  strokeWidth={2}
+                  dot={{ fill: color, r: 3 }}
+                  activeDot={{ r: 5, strokeWidth: 2 }}
+                  connectNulls
+                />
+              );
+            })}
           </LineChart>
         </ResponsiveContainer>
       </CardContent>

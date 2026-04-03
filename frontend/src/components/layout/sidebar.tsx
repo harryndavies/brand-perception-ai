@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { LayoutDashboard, FileText, ChevronLeft, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -8,31 +9,8 @@ import { useAuthStore } from "@/stores/auth";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  {
-    label: "Dashboard",
-    to: "/",
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-        <rect width="7" height="9" x="3" y="3" rx="1" />
-        <rect width="7" height="5" x="14" y="3" rx="1" />
-        <rect width="7" height="9" x="14" y="12" rx="1" />
-        <rect width="7" height="5" x="3" y="16" rx="1" />
-      </svg>
-    ),
-  },
-  {
-    label: "Reports",
-    to: "/reports",
-    icon: (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-        <path d="M10 13H8" />
-        <path d="M16 17H8" />
-        <path d="M16 13h-2" />
-      </svg>
-    ),
-  },
+  { label: "Dashboard", to: "/", icon: LayoutDashboard },
+  { label: "Reports", to: "/reports", icon: FileText },
 ];
 
 interface SidebarProps {
@@ -75,7 +53,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               )
             }
           >
-            {item.icon}
+            <item.icon className="h-4 w-4" />
             {!collapsed && item.label}
           </NavLink>
         ))}
@@ -85,58 +63,51 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <Separator />
         <div className="flex items-center justify-between px-2 pt-2">
           <ThemeToggle />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onToggle}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")}
-            >
-              <path d="m15 18-6-6 6-6" />
-            </svg>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onToggle}>
+            <ChevronLeft className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")} />
           </Button>
         </div>
         {user && (
-          <div className={cn("flex items-center gap-2 px-2", collapsed && "justify-center")}>
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-xs font-medium text-indigo-500">
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-            {!collapsed && (
-              <div className="flex-1 truncate">
-                <p className="truncate text-xs font-medium">{user.name}</p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={logout}
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Sign out
-                  </button>
-                  <ApiKeyDialog trigger={
-                    <button className={cn(
-                      "text-xs hover:text-foreground",
-                      user.has_api_key ? "text-emerald-500" : "text-muted-foreground"
-                    )}>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
-                        <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />
-                        <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />
-                      </svg>
-                    </button>
-                  } />
-                </div>
-              </div>
-            )}
-          </div>
+          <UserProfile user={user} collapsed={collapsed} onLogout={logout} />
         )}
       </div>
     </aside>
+  );
+}
+
+interface UserProfileProps {
+  user: { name: string; has_api_key: boolean };
+  collapsed: boolean;
+  onLogout: () => void;
+}
+
+function UserProfile({ user, collapsed, onLogout }: UserProfileProps) {
+  return (
+    <div className={cn("flex items-center gap-2 px-2", collapsed && "justify-center")}>
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-xs font-medium text-indigo-500">
+        {user.name.charAt(0).toUpperCase()}
+      </div>
+      {!collapsed && (
+        <div className="flex-1 truncate">
+          <p className="truncate text-xs font-medium">{user.name}</p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onLogout}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Sign out
+            </button>
+            <ApiKeyDialog trigger={
+              <button className={cn(
+                "text-xs hover:text-foreground",
+                user.has_api_key ? "text-emerald-500" : "text-muted-foreground"
+              )}>
+                <KeyRound className="h-3.5 w-3.5" />
+              </button>
+            } />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

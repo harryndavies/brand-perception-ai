@@ -1,28 +1,23 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { sentimentColorCompact, formatSentiment } from "@/lib/format";
 
 interface SentimentGaugeProps {
   score: number;
   brand: string;
 }
 
+function sentimentLabelDetailed(score: number): string {
+  if (score >= 0.6) return "Very Positive";
+  if (score >= 0.2) return "Positive";
+  if (score >= -0.2) return "Neutral";
+  if (score >= -0.6) return "Negative";
+  return "Very Negative";
+}
+
 export function SentimentGauge({ score, brand }: SentimentGaugeProps) {
   const percentage = ((score + 1) / 2) * 100;
-  const label =
-    score >= 0.6
-      ? "Very Positive"
-      : score >= 0.2
-        ? "Positive"
-        : score >= -0.2
-          ? "Neutral"
-          : score >= -0.6
-            ? "Negative"
-            : "Very Negative";
-  const color =
-    score >= 0.2
-      ? "text-emerald-500"
-      : score >= -0.2
-        ? "text-amber-500"
-        : "text-red-500";
+  const label = sentimentLabelDetailed(score);
+  const color = sentimentColorCompact(score);
 
   return (
     <Card>
@@ -57,8 +52,7 @@ export function SentimentGauge({ score, brand }: SentimentGaugeProps) {
               />
             </svg>
             <span className={`absolute text-lg font-bold ${color}`}>
-              {score > 0 ? "+" : ""}
-              {score.toFixed(2)}
+              {formatSentiment(score)}
             </span>
           </div>
           <div>

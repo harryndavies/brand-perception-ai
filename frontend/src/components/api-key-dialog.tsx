@@ -12,14 +12,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { api } from "@/lib/api";
+import { setApiKey, deleteApiKey } from "@/services/auth";
+import { PROVIDERS } from "@/lib/constants";
 import { useAuthStore } from "@/stores/auth";
-
-const PROVIDERS = [
-  { id: "anthropic", label: "Anthropic", placeholder: "sk-ant-..." },
-  { id: "openai", label: "OpenAI", placeholder: "sk-..." },
-  { id: "google", label: "Google", placeholder: "AIza..." },
-] as const;
 
 type ProviderId = (typeof PROVIDERS)[number]["id"];
 
@@ -32,7 +27,7 @@ export function ApiKeyDialog({ trigger }: { trigger: React.ReactElement }) {
   const savedProviders = user?.api_keys ?? [];
 
   const saveMutation = useMutation({
-    mutationFn: () => api.auth.setApiKey(activeProvider, key),
+    mutationFn: () => setApiKey(activeProvider, key),
     onSuccess: () => {
       if (user) {
         const updated = [...new Set([...savedProviders, activeProvider])];
@@ -43,7 +38,7 @@ export function ApiKeyDialog({ trigger }: { trigger: React.ReactElement }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (provider: string) => api.auth.deleteApiKey(provider),
+    mutationFn: (provider: string) => deleteApiKey(provider),
     onSuccess: (_, provider) => {
       if (user) {
         const updated = savedProviders.filter((p) => p !== provider);

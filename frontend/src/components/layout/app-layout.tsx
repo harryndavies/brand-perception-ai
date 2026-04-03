@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "@/stores/auth";
-import { api } from "@/lib/api";
+import { getMe } from "@/services/auth";
 import { Sidebar } from "./sidebar";
 import { cn } from "@/lib/utils";
 
@@ -12,8 +12,7 @@ export function AppLayout() {
 
   useEffect(() => {
     if (token && !user) {
-      api.auth
-        .me()
+      getMe()
         .then((u) => setAuth(u, token))
         .catch(() => logout())
         .finally(() => setLoading(false));

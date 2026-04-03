@@ -7,16 +7,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { formatSentiment } from "@/lib/format";
 import type { ModelPerception } from "@/types";
 
 interface ModelComparisonProps {
   models: ModelPerception[];
 }
 
-function sentimentLabel(score: number) {
-  if (score >= 0.5) return { label: "Positive", variant: "default" as const };
-  if (score >= 0) return { label: "Neutral", variant: "secondary" as const };
-  return { label: "Negative", variant: "destructive" as const };
+function sentimentBadge(score: number): { label: string; variant: "default" | "secondary" | "destructive" } {
+  if (score >= 0.5) return { label: "Positive", variant: "default" };
+  if (score >= 0) return { label: "Neutral", variant: "secondary" };
+  return { label: "Negative", variant: "destructive" };
 }
 
 export function ModelComparison({ models }: ModelComparisonProps) {
@@ -33,7 +34,7 @@ export function ModelComparison({ models }: ModelComparisonProps) {
         </TableHeader>
         <TableBody>
           {models.map((model) => {
-            const { label, variant } = sentimentLabel(model.sentiment);
+            const { label, variant } = sentimentBadge(model.sentiment);
             return (
               <TableRow key={model.model}>
                 <TableCell className="font-medium">{model.model}</TableCell>
@@ -41,7 +42,7 @@ export function ModelComparison({ models }: ModelComparisonProps) {
                   {model.summary}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={variant}>{label} ({model.sentiment > 0 ? "+" : ""}{model.sentiment.toFixed(2)})</Badge>
+                  <Badge variant={variant}>{label} ({formatSentiment(model.sentiment)})</Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">

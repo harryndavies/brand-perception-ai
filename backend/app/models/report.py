@@ -10,6 +10,7 @@ class Report(BaseModel):
     user_id: str
     brand: str
     competitors: list[str] = []
+    model: str = "sonnet"
     status: str = "pending"
     sentiment_score: Optional[float] = None
     scores: dict = {}

@@ -1,5 +1,5 @@
 import { useAuthStore } from "@/stores/auth";
-import type { BrandReport, User, Schedule } from "@/types";
+import type { BrandReport, User, Schedule, ModelOption } from "@/types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -52,10 +52,10 @@ export const api = {
   reports: {
     list: () => request<BrandReport[]>("/reports"),
     get: (id: string) => request<BrandReport>(`/reports/${id}`),
-    create: (brand: string, competitors: string[]) =>
+    create: (brand: string, competitors: string[], model: ModelOption = "sonnet") =>
       request<BrandReport>("/reports", {
         method: "POST",
-        body: JSON.stringify({ brand, competitors }),
+        body: JSON.stringify({ brand, competitors, model }),
       }),
     stream: (id: string): EventSource => {
       const token = useAuthStore.getState().token;
@@ -65,10 +65,10 @@ export const api = {
   },
   schedules: {
     list: () => request<Schedule[]>("/schedules"),
-    create: (brand: string, competitors: string[], interval_days: number) =>
+    create: (brand: string, competitors: string[], model: ModelOption, interval_days: number) =>
       request<Schedule>("/schedules", {
         method: "POST",
-        body: JSON.stringify({ brand, competitors, interval_days }),
+        body: JSON.stringify({ brand, competitors, model, interval_days }),
       }),
     remove: (id: string) =>
       request<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),

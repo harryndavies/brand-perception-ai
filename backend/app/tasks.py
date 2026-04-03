@@ -154,7 +154,7 @@ def _build_trend(brand: str, current_sentiment: float) -> list[dict]:
 # ── Main Celery task ─────────────────────────────────────────────────────────
 
 @celery_app.task(name="app.tasks.run_analysis", bind=True, max_retries=2)
-def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_id: str | None = None):
+def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_id: str | None = None, model_id: str = "claude-sonnet-4-20250514"):
     """Run a single Claude call to analyse a brand.
 
     Runs as a Celery task in a worker process. Progress is published to
@@ -177,7 +177,7 @@ def run_analysis(self, report_id: str, brand: str, competitors: list[str], user_
 
         client = _get_client(user_id)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=model_id,
             max_tokens=2048,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
@@ -275,12 +275,17 @@ def process_schedules():
     db = get_sync_db()
     now = datetime.now(timezone.utc)
 
+    # Import model mapping from reports route
+    from app.routes.reports import ALLOWED_MODELS
+
     due = list(db.schedules.find({"active": True, "next_run": {"$lte": now}}))
     for schedule in due:
         user_id = schedule["user_id"]
         brand = schedule["brand"]
         competitors = schedule.get("competitors", [])
         interval_days = schedule.get("interval_days", 30)
+        model_key = schedule.get("model", "sonnet")
+        model_id = ALLOWED_MODELS.get(model_key, ALLOWED_MODELS["sonnet"])
 
         # Create a report
         report_id = str(uuid.uuid4())
@@ -289,8 +294,10 @@ def process_schedules():
             "user_id": user_id,
             "brand": brand,
             "competitors": competitors,
+            "model": model_key,
             "status": "processing",
             "sentiment_score": None,
+            "scores": {},
             "pillars": [],
             "model_perceptions": [],
             "competitor_positions": [],
@@ -300,7 +307,7 @@ def process_schedules():
         })
 
         init_progress(report_id, ["analysis"])
-        run_analysis.delay(report_id, brand, competitors, user_id)
+        run_analysis.delay(report_id, brand, competitors, user_id, model_id)
 
         # Advance next_run
         from datetime import timedelta

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/api/schedules", tags=["schedules"])
 class CreateScheduleRequest(BaseModel):
     brand: str = Field(..., min_length=1, max_length=100)
     competitors: list[str] = Field(default=[], max_length=3)
+    model: Literal["sonnet", "haiku", "opus"] = "sonnet"
     interval_days: int = Field(default=30, ge=1, le=365)
 
 
@@ -42,6 +44,7 @@ async def create_schedule(
         user_id=user.id,
         brand=body.brand,
         competitors=body.competitors,
+        model=body.model,
         interval_days=body.interval_days,
         next_run=datetime.now(timezone.utc) + timedelta(days=body.interval_days),
     )

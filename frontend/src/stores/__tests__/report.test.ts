@@ -6,6 +6,7 @@ const mockReport: BrandReport = {
   id: "r1",
   brand: "Nike",
   competitors: ["Adidas"],
+  model: "sonnet",
   status: "complete",
   sentiment_score: 0.7,
   scores: null,

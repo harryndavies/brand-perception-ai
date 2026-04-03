@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -13,9 +15,17 @@ from app.tasks import run_analysis
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
+ALLOWED_MODELS = {
+    "sonnet": "claude-sonnet-4-20250514",
+    "haiku": "claude-haiku-4-5-20251001",
+    "opus": "claude-opus-4-20250514",
+}
+
+
 class CreateReportRequest(BaseModel):
     brand: str = Field(..., min_length=1, max_length=100)
     competitors: list[str] = Field(default=[], max_length=3)
+    model: Literal["sonnet", "haiku", "opus"] = "sonnet"
 
 
 @router.get("")
@@ -64,10 +74,13 @@ async def create_report(
 
     db = get_async_db()
 
+    model_id = ALLOWED_MODELS[body.model]
+
     report = Report(
         user_id=user.id,
         brand=body.brand,
         competitors=body.competitors,
+        model=body.model,
         status="processing",
     )
     await db.reports.insert_one(report.to_doc())
@@ -76,7 +89,7 @@ async def create_report(
     init_progress(report.id, ["analysis"])
 
     # Dispatch analysis to Celery worker via Redis broker
-    run_analysis.delay(report.id, report.brand, report.competitors, user.id)
+    run_analysis.delay(report.id, report.brand, report.competitors, user.id, model_id)
 
     return report.model_dump()
 

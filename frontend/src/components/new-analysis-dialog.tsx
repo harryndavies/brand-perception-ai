@@ -17,7 +17,13 @@ import {
 } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import type { JobStatus } from "@/types";
+import type { JobStatus, ModelOption } from "@/types";
+
+const MODEL_OPTIONS: { value: ModelOption; label: string; description: string }[] = [
+  { value: "haiku", label: "Haiku", description: "Fastest, lowest cost" },
+  { value: "sonnet", label: "Sonnet", description: "Balanced speed and quality" },
+  { value: "opus", label: "Opus", description: "Highest quality" },
+];
 
 export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) {
   const navigate = useNavigate();
@@ -26,6 +32,7 @@ export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) 
   const [open, setOpen] = useState(false);
   const [brand, setBrand] = useState("");
   const [competitors, setCompetitors] = useState(["", "", ""]);
+  const [model, setModel] = useState<ModelOption>("sonnet");
   const [repeatMonthly, setRepeatMonthly] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState<JobStatus>("idle");
@@ -38,6 +45,7 @@ export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) 
   function reset() {
     setBrand("");
     setCompetitors(["", "", ""]);
+    setModel("sonnet");
     setRepeatMonthly(false);
     setIsRunning(false);
     setStatus("idle");
@@ -80,9 +88,9 @@ export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) 
   const mutation = useMutation({
     mutationFn: async () => {
       const filteredCompetitors = competitors.filter((c) => c.trim());
-      const report = await api.reports.create(brand.trim(), filteredCompetitors);
+      const report = await api.reports.create(brand.trim(), filteredCompetitors, model);
       if (repeatMonthly) {
-        await api.schedules.create(brand.trim(), filteredCompetitors, 30);
+        await api.schedules.create(brand.trim(), filteredCompetitors, model, 30);
       }
       return report;
     },
@@ -170,6 +178,27 @@ export function NewAnalysisDialog({ trigger }: { trigger: React.ReactElement }) 
                     onChange={(e) => updateCompetitor(i, e.target.value)}
                   />
                 ))}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Model</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {MODEL_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setModel(opt.value)}
+                      className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                        model === opt.value
+                          ? "border-indigo-500 bg-indigo-500/10 text-indigo-500"
+                          : "hover:border-foreground/20"
+                      }`}
+                    >
+                      <p className="font-medium">{opt.label}</p>
+                      <p className="text-xs text-muted-foreground">{opt.description}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex items-center justify-between rounded-md border px-3 py-2">

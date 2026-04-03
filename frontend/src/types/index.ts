@@ -36,10 +36,13 @@ export interface BrandScores {
   market_positioning: number;
 }
 
+export type ModelOption = "sonnet" | "haiku" | "opus";
+
 export interface BrandReport {
   id: string;
   brand: string;
   competitors: string[];
+  model: ModelOption;
   status: AnalysisStatus;
   sentiment_score: number | null;
   scores: BrandScores | null;
@@ -70,6 +73,7 @@ export interface Schedule {
   id: string;
   brand: string;
   competitors: string[];
+  model: ModelOption;
   interval_days: number;
   next_run: string;
   active: boolean;
